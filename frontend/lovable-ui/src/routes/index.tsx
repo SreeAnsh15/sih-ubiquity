@@ -33,13 +33,24 @@ const TABS = [
 
 function Index() {
   const [tab, setTab] = useState<"customer" | "worker">("customer");
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof checkBackend>> | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
     const ping = async () => {
-      const ok = await checkBackend();
-      if (active) setOnline(ok);
+      try {
+        const status = await checkBackend();
+        if (active) {
+          setHealth(status);
+          setOnline(true);
+        }
+      } catch {
+        if (active) {
+          setHealth(null);
+          setOnline(false);
+        }
+      }
     };
     ping();
     const id = setInterval(ping, 20000);
@@ -74,19 +85,20 @@ function Index() {
             <div className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1.5">
               <Zap className="h-3.5 w-3.5 text-primary" />
               <span className="text-[11px] font-semibold text-navy-soft">
-                Backend Engine: {online === false ? "Demo Mode" : "Connected"}
+                Backend Engine:{" "}
+                {online === false ? "Offline" : health?.demo_mode ? "Demo Mode" : "Connected"}
               </span>
               <span className="relative flex h-2 w-2">
                 <span
                   className={cn(
                     "absolute inline-flex h-full w-full rounded-full opacity-75",
-                    online === false ? "bg-primary" : "animate-ping bg-trust",
+                    online === false ? "bg-destructive" : "animate-ping bg-trust",
                   )}
                 />
                 <span
                   className={cn(
                     "relative inline-flex h-2 w-2 rounded-full",
-                    online === false ? "bg-primary" : "bg-trust",
+                    online === false ? "bg-destructive" : "bg-trust",
                   )}
                 />
               </span>

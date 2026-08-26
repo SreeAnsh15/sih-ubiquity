@@ -1,228 +1,550 @@
-import os
 import io
+import hmac
+import json
 import math
-from typing import List
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+import os
+import secrets
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, List
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-import openai
-from google import genai
-from google.genai import types
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-app = FastAPI(title="Ubiquity Cooperative Gig Backend", version="1.0.0")
+try:
+    import openai
+except ImportError:  # Optional when running only the booking demo.
+    openai = None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:  # Optional until voice AI is configured.
+    genai = None
+    types = None
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "dummy-key")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6Laacy7rqVeH1oOWFynYRwXGXBtzRb9VRAxbcL37PjAGA")
 
-# Safe initialization
-openai_client = None
-if OPENAI_API_KEY and OPENAI_API_KEY != "dummy-key":
-    try:
-        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-    except Exception:
-        openai_client = None
-
-gemini_client = None
-if GEMINI_API_KEY:
-    try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception:
-        gemini_client = None
-
-class WorkerProfileSchema(BaseModel):
-    full_name: str = Field(description="Name of the worker if mentioned, else 'Local Worker'")
-    primary_skill: str = Field(description="Main skill: Plumbing, Electrical, Cleaning, Carpentry, Masonry, etc.")
-    sub_skills: List[str] = Field(default=[], description="List of specific services offered")
-    experience_years: int = Field(default=1, description="Years of experience mentioned")
-    base_rate_inr: float = Field(default=250.0, description="Quoted rate in INR")
-    operating_zone: str = Field(description="Locality/Area mentioned")
-
-class BookingRequest(BaseModel):
-    customer_id: str
-    service_type: str
-    customer_lat: float
-    customer_lng: float
-
-class SettleBookingRequest(BaseModel):
-    booking_id: str
-    worker_id: str
-    cluster_id: str
-    gross_amount: float
-    otp_code: str
-
-MOCK_WORKERS = [
-    {
-        "worker_id": "w-101",
-        "full_name": "Murugan S.",
-        "phone": "+91 9876543210",
-        "skills": ["Plumbing", "Pipe Fitting"],
-        "lat": 13.3512,
-        "lng": 80.1420,
-        "trust_rating": 0.88,
-        "idle_days": 3,
-        "is_verified": True,
-        "availability": "online"
-    },
-    {
-        "worker_id": "w-102",
-        "full_name": "Ravi Kumar",
-        "phone": "+91 9876543211",
-        "skills": ["Plumbing", "Sanitation"],
-        "lat": 13.3550,
-        "lng": 80.1450,
-        "trust_rating": 0.95,
-        "idle_days": 0,
-        "is_verified": True,
-        "availability": "online"
-    },
-    {
-        "worker_id": "w-103",
-        "full_name": "Selvi M.",
-        "phone": "+91 9876543212",
-        "skills": ["Cleaning", "Housekeeping"],
-        "lat": 13.3490,
-        "lng": 80.1390,
-        "trust_rating": 0.92,
-        "idle_days": 2,
-        "is_verified": True,
-        "availability": "online"
-    }
+ROOT = Path(__file__).resolve().parent
+DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "ubiquity.db")))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+AUTH_SECRET = os.getenv("AUTH_SECRET", "")
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
+OTP_TTL_MINUTES = 30
+MAX_OTP_ATTEMPTS = 5
+CLUSTER_ID = "coimbatore-gandhipuram"
+SUPPORTED_LANGUAGES = {"ta", "hi", "te", "mr", "en"}
+SUPPORTED_SERVICES = {
+    "plumbing": "Plumbing",
+    "pipe fitting": "Plumbing",
+    "sanitation": "Plumbing",
+    "electrical": "Electrical",
+    "house cleaning": "House Cleaning",
+    "cleaning": "House Cleaning",
+    "housekeeping": "House Cleaning",
+    "carpentry": "Carpentry",
+    "masonry": "Masonry",
+}
+BASE_RATES = {
+    "Plumbing": 198.4,
+    "Electrical": 224.6,
+    "House Cleaning": 168.2,
+    "Carpentry": 246.8,
+    "Masonry": 262.5,
+}
+SEED_WORKERS = [
+    ("w-101", "Murugan S.", "+91 9876543210", ["Plumbing", "Pipe Fitting"], 11.0231, 76.9612, 0.88, 6),
+    ("w-102", "Lakshmi R.", "+91 9876543211", ["Electrical", "Appliance Repair"], 11.0104, 76.9481, 0.95, 3),
+    ("w-103", "Anbu K.", "+91 9876543212", ["Carpentry", "Furniture Repair"], 11.0272, 76.9439, 0.90, 9),
+    ("w-104", "Selvi M.", "+91 9876543213", ["House Cleaning", "Housekeeping"], 11.0059, 76.9668, 0.92, 2),
+    ("w-105", "Ravi Chandran", "+91 9876543214", ["Masonry", "Plastering"], 11.0325, 76.9702, 0.84, 11),
 ]
 
-def calculate_haversine_km(lat1, lon1, lat2, lon2):
-    R = 6371.0
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def db_connect() -> sqlite3.Connection:
+    connection = sqlite3.connect(DB_PATH, timeout=10)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    return connection
+
+
+def init_db() -> None:
+    with db_connect() as db:
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS workers (
+                worker_id TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                skills_json TEXT NOT NULL,
+                lat REAL NOT NULL,
+                lng REAL NOT NULL,
+                trust_rating REAL NOT NULL CHECK (trust_rating BETWEEN 0 AND 1),
+                idle_days INTEGER NOT NULL DEFAULT 0 CHECK (idle_days >= 0),
+                is_verified INTEGER NOT NULL DEFAULT 1,
+                availability TEXT NOT NULL DEFAULT 'online',
+                capacity INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS bookings (
+                booking_id TEXT PRIMARY KEY,
+                customer_id TEXT NOT NULL,
+                worker_id TEXT NOT NULL REFERENCES workers(worker_id),
+                service_type TEXT NOT NULL,
+                customer_lat REAL NOT NULL,
+                customer_lng REAL NOT NULL,
+                gross_amount REAL NOT NULL CHECK (gross_amount > 0),
+                otp_hash TEXT NOT NULL,
+                otp_expires_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'confirmed',
+                otp_attempts INTEGER NOT NULL DEFAULT 0 CHECK (otp_attempts >= 0),
+                cluster_id TEXT NOT NULL DEFAULT 'coimbatore-gandhipuram',
+                created_at TEXT NOT NULL,
+                settled_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS settlements (
+                settlement_id TEXT PRIMARY KEY,
+                booking_id TEXT UNIQUE NOT NULL REFERENCES bookings(booking_id),
+                gross_amount REAL NOT NULL,
+                worker_payout REAL NOT NULL,
+                pacs_maintenance REAL NOT NULL,
+                mutual_aid_fund REAL NOT NULL,
+                reference TEXT UNIQUE NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS worker_registrations (
+                member_id TEXT PRIMARY KEY,
+                user_id TEXT UNIQUE NOT NULL,
+                full_name TEXT NOT NULL,
+                primary_skill TEXT NOT NULL,
+                sub_skills_json TEXT NOT NULL,
+                experience_years INTEGER NOT NULL,
+                base_rate_inr REAL NOT NULL,
+                operating_zone TEXT NOT NULL,
+                transcript TEXT NOT NULL,
+                language TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        columns = {row[1] for row in db.execute("PRAGMA table_info(bookings)").fetchall()}
+        if "otp_attempts" not in columns:
+            db.execute("ALTER TABLE bookings ADD COLUMN otp_attempts INTEGER NOT NULL DEFAULT 0")
+        if "cluster_id" not in columns:
+            db.execute("ALTER TABLE bookings ADD COLUMN cluster_id TEXT NOT NULL DEFAULT 'coimbatore-gandhipuram'")
+        if db.execute("SELECT COUNT(*) FROM workers").fetchone()[0] == 0:
+            now = utc_now().isoformat()
+            db.executemany(
+                """
+                INSERT INTO workers
+                (worker_id, full_name, phone, skills_json, lat, lng, trust_rating, idle_days,
+                 is_verified, availability, capacity, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'online', 1, ?)
+                """,
+                [
+                    (worker_id, name, phone, json.dumps(skills), lat, lng, rating, idle_days, now)
+                    for worker_id, name, phone, skills, lat, lng, rating, idle_days in SEED_WORKERS
+                ],
+            )
+
+
+init_db()
+
+app = FastAPI(title="Ubiquity Cooperative Gig Backend", version="2.0.0")
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:3000",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-User-Id", "X-User-Signature"],
+)
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if openai and OPENAI_API_KEY else None
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
+
+
+class WorkerProfileSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    full_name: str = Field(min_length=2, max_length=120)
+    primary_skill: str = Field(min_length=2, max_length=60)
+    sub_skills: List[str] = Field(default_factory=list, max_length=12)
+    experience_years: int = Field(default=1, ge=0, le=60)
+    base_rate_inr: float = Field(default=250.0, gt=0, le=100000)
+    operating_zone: str = Field(min_length=2, max_length=120)
+
+
+class BookingRequest(BaseModel):
+    customer_id: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9._@+-]+$")
+    service_type: str = Field(min_length=2, max_length=60)
+    customer_lat: float = Field(ge=-90, le=90)
+    customer_lng: float = Field(ge=-180, le=180)
+
+    @field_validator("service_type")
+    @classmethod
+    def normalize_service(cls, value: str) -> str:
+        normalized = SUPPORTED_SERVICES.get(value.strip().lower())
+        if not normalized:
+            raise ValueError(f"Unsupported service. Choose from: {', '.join(BASE_RATES)}")
+        return normalized
+
+
+class CreateBookingRequest(BookingRequest):
+    worker_id: str = Field(min_length=3, max_length=80)
+    agreed_amount: float = Field(gt=0, le=100000)
+
+
+class SettleBookingRequest(BaseModel):
+    booking_id: str = Field(min_length=8, max_length=80)
+    worker_id: str = Field(min_length=3, max_length=80)
+    cluster_id: str = Field(min_length=2, max_length=80)
+    gross_amount: float = Field(gt=0, le=100000)
+    otp_code: str = Field(pattern=r"^\d{4}$")
+
+
+class RegisterWorkerRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    transcript: str = Field(min_length=2, max_length=5000)
+    language: str = Field(min_length=2, max_length=40)
+    full_name: str = Field(min_length=2, max_length=120)
+    primary_skill: str = Field(min_length=2, max_length=60)
+    sub_skills: List[str] = Field(default_factory=list, max_length=12)
+    experience_years: int = Field(ge=0, le=60)
+    base_rate_inr: float = Field(gt=0, le=100000)
+    operating_zone: str = Field(min_length=2, max_length=120)
+
+
+def require_actor(request: Request, user_id: str) -> str:
+    actor = request.headers.get("X-User-Id", "").strip()
+    if not actor or actor != user_id:
+        raise HTTPException(status_code=401, detail="Authenticated identity is required")
+    if not DEMO_MODE:
+        signature = request.headers.get("X-User-Signature", "")
+        if not AUTH_SECRET or not signature:
+            raise HTTPException(status_code=503, detail="Production authentication is not configured")
+        expected = hmac.new(AUTH_SECRET.encode(), actor.encode(), "sha256").hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(status_code=401, detail="Invalid authenticated identity")
+    return actor
+
+
+@app.post("/api/auth/dev-token")
+def issue_dev_identity(user_id: str = "demo-customer") -> dict[str, str]:
+    if not DEMO_MODE:
+        raise HTTPException(status_code=404, detail="Development identity is disabled")
+    if not user_id or len(user_id) > 120:
+        raise HTTPException(status_code=400, detail="Invalid development identity")
+    return {"user_id": user_id, "signature": hmac.new((AUTH_SECRET or "demo").encode(), user_id.encode(), "sha256").hexdigest()}
+
+
+def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    radius = 6371.0
     dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def hash_otp(otp: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(otp.encode("utf-8")).hexdigest()
+
+
+def generate_otp() -> str:
+    import secrets
+
+    return f"{secrets.randbelow(10000):04d}"
+
+
+def active_booking_count(db: sqlite3.Connection, worker_id: str) -> int:
+    now = utc_now().isoformat()
+    return int(
+        db.execute(
+            "SELECT COUNT(*) FROM bookings WHERE worker_id = ? AND status = 'confirmed' AND otp_expires_at > ?",
+            (worker_id, now),
+        ).fetchone()[0]
+    )
+
+
+def worker_payload(row: sqlite3.Row, distance_km: float, service: str, score: float) -> dict[str, Any]:
+    fair_price = round(BASE_RATES[service] + distance_km * 15, 2)
+    commercial_price = round(fair_price * 1.35, 2)
+    return {
+        "worker_id": row["worker_id"],
+        "full_name": row["full_name"],
+        "skill": service,
+        "distance_km": round(distance_km, 2),
+        "fair_match_score": round(score, 3),
+        "fair_price_inr": fair_price,
+        "commercial_aggregator_price_inr": commercial_price,
+        "customer_savings_inr": round(commercial_price - fair_price, 2),
+        "trust_rating": row["trust_rating"],
+        "idle_days": row["idle_days"],
+        "lat": row["lat"],
+        "lng": row["lng"],
+        "verified": bool(row["is_verified"]),
+        "availability": row["availability"],
+    }
+
 
 @app.get("/")
-def read_root():
-    return {"status": "Ubiquity Cooperative Backend Running"}
+def read_root() -> dict[str, str]:
+    return {"status": "ok", "service": "Ubiquity Cooperative Gig Backend", "version": app.version}
+
+
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "database": DB_PATH.exists(),
+        "voice_transcription_configured": bool(openai_client),
+        "profile_extraction_configured": bool(gemini_client),
+        "demo_mode": DEMO_MODE,
+    }
+
 
 @app.post("/api/workers/voice-onboard")
 async def voice_onboard_worker(
     audio_file: UploadFile = File(...),
-    preferred_language: str = Form("ta")
-):
-    """
-    Step 1: Receives recorded voice note.
-    Step 2: Transcribes via Whisper / fallback.
-    Step 3: Extracts structured profile JSON via Gemini Flash.
-    """
+    preferred_language: str = Form("ta"),
+) -> dict[str, Any]:
+    if preferred_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail="Unsupported language")
+    if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="Upload an audio recording")
+    audio_bytes = await audio_file.read(MAX_AUDIO_BYTES + 1)
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio recording is empty")
+    if not openai_client or not gemini_client:
+        raise HTTPException(
+            status_code=503,
+            detail="Voice onboarding is unavailable until OPENAI_API_KEY and GEMINI_API_KEY are configured",
+        )
+
     try:
-        audio_bytes = await audio_file.read()
-        
-        # If OpenAI key exists, run Whisper
-        transcription_text = ""
-        if openai_client:
-            buffer = io.BytesIO(audio_bytes)
-            buffer.name = audio_file.filename or "audio.wav"
-            resp = openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=buffer,
-                language=preferred_language
-            )
-            transcription_text = resp.text
+        buffer = io.BytesIO(audio_bytes)
+        buffer.name = audio_file.filename or "voice.webm"
+        transcription = openai_client.audio.transcriptions.create(
+            model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
+            file=buffer,
+            language=preferred_language,
+        )
+        transcription_text = transcription.text.strip()
+        if not transcription_text:
+            raise HTTPException(status_code=422, detail="No speech could be detected in the recording")
+        response = gemini_client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            contents=(
+                "Extract this worker profile from the transcript. Return only the requested structured fields. "
+                f"Transcript: {transcription_text}"
+            ),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=WorkerProfileSchema,
+                temperature=0.1,
+            ),
+        )
+        parsed = response.parsed
+        if isinstance(parsed, BaseModel):
+            profile = parsed.model_dump()
+        elif isinstance(parsed, dict):
+            profile = parsed
         else:
-            transcription_text = "I have 5 years experience in plumbing and pipe repair in Tambaram, charging 300 base rate."
+            raise HTTPException(status_code=502, detail="Profile extraction returned an invalid response")
+        return {"status": "success", "transcription": transcription_text, "structured_profile": profile}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"voice onboarding failed: {exc}")
+        raise HTTPException(status_code=502, detail="Voice processing failed; please retry") from exc
 
-        # Structured parsing via Gemini Flash
-        if gemini_client:
-            prompt = f"Extract worker profile in JSON: \"{transcription_text}\""
-            response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=WorkerProfileSchema,
-                    temperature=0.1
-                )
-            )
-            parsed_data = response.parsed
-        else:
-            parsed_data = {
-                "full_name": "Local Worker",
-                "primary_skill": "Plumbing",
-                "sub_skills": ["Pipe Repair", "Tap Leakage"],
-                "experience_years": 5,
-                "base_rate_inr": 300.0,
-                "operating_zone": "Tambaram"
-            }
 
-        return {
-            "status": "success",
-            "transcription": transcription_text,
-            "structured_profile": parsed_data
-        }
-
-    except Exception as e:
-        return {
-            "status": "fallback_success",
-            "transcription": "Sample Audio: 5 years experience in plumbing, base charge 300 rupees",
-            "structured_profile": {
-                "full_name": "Karthik R.",
-                "primary_skill": "Plumbing",
-                "sub_skills": ["General Plumbing", "Leakage Fixing"],
-                "experience_years": 5,
-                "base_rate_inr": 300.0,
-                "operating_zone": "Kilmudalambedu"
-            },
-            "note": "Fallback triggered for demo stability"
-        }
+@app.post("/api/workers/register")
+def register_worker(req: RegisterWorkerRequest, request: Request) -> dict[str, Any]:
+    user_id = request.headers.get("X-User-Id", "").strip()
+    require_actor(request, user_id)
+    member_id = f"PACS-{uuid.uuid4().hex[:8].upper()}"
+    now = utc_now().isoformat()
+    with db_connect() as db:
+        if db.execute("SELECT member_id FROM worker_registrations WHERE user_id = ?", (user_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This user already has a PACS registration")
+        db.execute(
+            """
+            INSERT INTO worker_registrations
+            (member_id, user_id, full_name, primary_skill, sub_skills_json, experience_years,
+             base_rate_inr, operating_zone, transcript, language, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (member_id, user_id, req.full_name, req.primary_skill, json.dumps(req.sub_skills), req.experience_years,
+             req.base_rate_inr, req.operating_zone, req.transcript, req.language, now),
+        )
+    return {"status": "registered", "member_id": member_id, "registered_at": now}
 
 
 @app.post("/api/bookings/match-and-price")
-async def match_worker_and_price(req: BookingRequest):
-    matched = []
-    for worker in MOCK_WORKERS:
-        if req.service_type.lower() in [s.lower() for s in worker["skills"]] and worker["availability"] == "online":
-            dist = calculate_haversine_km(req.customer_lat, req.customer_lng, worker["lat"], worker["lng"])
-            if dist <= 5.0:
-                proximity_score = max(0.0, 1.0 - (dist / 5.0))
-                fair_score = (0.4 * proximity_score) + (0.3 * worker["trust_rating"]) + (0.3 * min(1.0, worker["idle_days"] / 5.0))
-                fair_price = round(200.0 + (dist * 15.0), 2)
-                commercial_price = round(fair_price * 1.35, 2)
+def match_worker_and_price(req: BookingRequest, request: Request) -> dict[str, Any]:
+    require_actor(request, req.customer_id)
+    candidates: list[dict[str, Any]] = []
+    with db_connect() as db:
+        workers = db.execute("SELECT * FROM workers WHERE is_verified = 1 AND availability = 'online'").fetchall()
+        for worker in workers:
+            skills = {str(skill).lower() for skill in json.loads(worker["skills_json"])}
+            if req.service_type.lower() not in skills and not any(
+                SUPPORTED_SERVICES.get(skill) == req.service_type for skill in skills
+            ):
+                continue
+            if active_booking_count(db, worker["worker_id"]) >= worker["capacity"]:
+                continue
+            distance = haversine_km(req.customer_lat, req.customer_lng, worker["lat"], worker["lng"])
+            if distance > 5:
+                continue
+            proximity_score = max(0.0, 1.0 - distance / 5.0)
+            idle_score = min(1.0, worker["idle_days"] / 10.0)
+            score = 0.45 * proximity_score + 0.35 * worker["trust_rating"] + 0.20 * idle_score
+            candidates.append(worker_payload(worker, distance, req.service_type, score))
 
-                matched.append({
-                    "worker_id": worker["worker_id"],
-                    "full_name": worker["full_name"],
-                    "distance_km": round(dist, 2),
-                    "fair_match_score": round(fair_score, 3),
-                    "fair_price_inr": fair_price,
-                    "commercial_aggregator_price_inr": commercial_price,
-                    "customer_savings_inr": round(commercial_price - fair_price, 2)
-                })
-
-    matched.sort(key=lambda x: x["fair_match_score"], reverse=True)
+    candidates.sort(key=lambda item: (-item["fair_match_score"], item["distance_km"], item["worker_id"]))
     return {
         "status": "success",
+        "cluster_id": CLUSTER_ID,
         "service_requested": req.service_type,
-        "selected_best_match": matched[0] if matched else None,
-        "all_ranked_candidates": matched
+        "selected_best_match": candidates[0] if candidates else None,
+        "all_ranked_candidates": candidates,
+        "breakdown": {"proximity": 45, "trust": 35, "idle": 20},
     }
 
+
+@app.post("/api/bookings")
+def create_booking(req: CreateBookingRequest, request: Request) -> dict[str, Any]:
+    require_actor(request, req.customer_id)
+    booking_id = f"bk_{uuid.uuid4().hex[:12]}"
+    otp = generate_otp()
+    now = utc_now()
+    expiry = now + timedelta(minutes=OTP_TTL_MINUTES)
+    with db_connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        worker = db.execute(
+            "SELECT * FROM workers WHERE worker_id = ? AND is_verified = 1 AND availability = 'online'",
+            (req.worker_id,),
+        ).fetchone()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker is unavailable")
+        distance = haversine_km(req.customer_lat, req.customer_lng, worker["lat"], worker["lng"])
+        if distance > 5:
+            raise HTTPException(status_code=400, detail="Worker is outside the service radius")
+        if active_booking_count(db, req.worker_id) >= worker["capacity"]:
+            raise HTTPException(status_code=409, detail="Worker is already handling another booking")
+        expected_amount = round(BASE_RATES[req.service_type] + distance * 15, 2)
+        if abs(req.agreed_amount - expected_amount) > 0.02:
+            raise HTTPException(status_code=409, detail="Price quote is stale; search again for a current quote")
+        db.execute(
+            """
+            INSERT INTO bookings
+            (booking_id, customer_id, worker_id, service_type, customer_lat, customer_lng, gross_amount,
+             otp_hash, otp_expires_at, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
+            """,
+            (booking_id, req.customer_id, req.worker_id, req.service_type, req.customer_lat, req.customer_lng,
+             req.agreed_amount, hash_otp(otp), expiry.isoformat(), now.isoformat()),
+        )
+    response: dict[str, Any] = {
+        "status": "confirmed",
+        "booking_id": booking_id,
+        "worker_id": req.worker_id,
+        "gross_amount": req.agreed_amount,
+        "otp_expires_at": expiry.isoformat(),
+        "message": "Booking confirmed. The completion OTP is issued to the worker app.",
+    }
+    if DEMO_MODE:
+        response["development_otp"] = otp
+        response["development_note"] = "Demo-only OTP; disable DEMO_MODE in production."
+    return response
+
+
+@app.delete("/api/bookings/{booking_id}/cancel")
+def cancel_booking(booking_id: str, request: Request) -> dict[str, str]:
+    with db_connect() as db:
+        booking = db.execute("SELECT * FROM bookings WHERE booking_id = ?", (booking_id,)).fetchone()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        require_actor(request, booking["customer_id"])
+        if booking["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Booking is no longer cancellable")
+        db.execute("UPDATE bookings SET status = 'cancelled' WHERE booking_id = ?", (booking_id,))
+    return {"status": "cancelled", "booking_id": booking_id}
+
+
 @app.post("/api/bookings/verify-settle")
-async def verify_and_settle_job(req: SettleBookingRequest):
-    if len(req.otp_code) != 4:
-        raise HTTPException(status_code=400, detail="Invalid 4-digit OTP")
-    
-    gross = req.gross_amount
+def verify_and_settle_job(req: SettleBookingRequest, request: Request) -> dict[str, Any]:
+    with db_connect() as db:
+        booking = db.execute("SELECT * FROM bookings WHERE booking_id = ?", (req.booking_id,)).fetchone()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        require_actor(request, booking["customer_id"])
+        if booking["worker_id"] != req.worker_id:
+            raise HTTPException(status_code=403, detail="Worker does not own this booking")
+        if booking["cluster_id"] != req.cluster_id or req.cluster_id != CLUSTER_ID:
+            raise HTTPException(status_code=400, detail="Invalid booking cluster")
+        if booking["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Booking has already been settled or cancelled")
+        if abs(float(booking["gross_amount"]) - req.gross_amount) > 0.02:
+            raise HTTPException(status_code=409, detail="Settlement amount does not match the booking quote")
+        if utc_now() > datetime.fromisoformat(booking["otp_expires_at"]):
+            db.execute("UPDATE bookings SET status = 'expired' WHERE booking_id = ?", (req.booking_id,))
+            db.commit()
+            raise HTTPException(status_code=410, detail="Completion OTP has expired")
+        if hash_otp(req.otp_code) != booking["otp_hash"]:
+            attempts = int(booking["otp_attempts"]) + 1
+            if attempts >= MAX_OTP_ATTEMPTS:
+                db.execute("UPDATE bookings SET otp_attempts = ?, status = 'locked' WHERE booking_id = ?", (attempts, req.booking_id))
+                db.commit()
+                raise HTTPException(status_code=429, detail="Too many incorrect OTP attempts")
+            db.execute("UPDATE bookings SET otp_attempts = ? WHERE booking_id = ?", (attempts, req.booking_id))
+            db.commit()
+            raise HTTPException(status_code=400, detail="Incorrect completion OTP")
+
+        gross = round(float(booking["gross_amount"]), 2)
+        worker_payout = round(gross * 0.98, 2)
+        pacs_maintenance = round(gross * 0.015, 2)
+        mutual_aid_fund = round(gross - worker_payout - pacs_maintenance, 2)
+        reference = f"UBQ-{uuid.uuid4().hex[:10].upper()}"
+        now = utc_now().isoformat()
+        db.execute("UPDATE bookings SET status = 'settled', settled_at = ? WHERE booking_id = ?", (now, req.booking_id))
+        db.execute(
+            """
+            INSERT INTO settlements
+            (settlement_id, booking_id, gross_amount, worker_payout, pacs_maintenance, mutual_aid_fund, reference, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (f"st_{uuid.uuid4().hex[:12]}", req.booking_id, gross, worker_payout, pacs_maintenance, mutual_aid_fund, reference, now),
+        )
     return {
         "status": "settled",
         "booking_id": req.booking_id,
         "settlement_breakdown": {
             "gross_amount_paid": gross,
-            "direct_worker_payout_98pct": round(gross * 0.98, 2),
-            "pacs_cooperative_maintenance_1_5pct": round(gross * 0.015, 2),
-            "mutual_aid_emergency_pool_0_5pct": round(gross * 0.005, 2)
-        }
+            "direct_worker_payout_98pct": worker_payout,
+            "pacs_cooperative_maintenance_1_5pct": pacs_maintenance,
+            "mutual_aid_emergency_pool_0_5pct": mutual_aid_fund,
+        },
+        "reference": reference,
     }

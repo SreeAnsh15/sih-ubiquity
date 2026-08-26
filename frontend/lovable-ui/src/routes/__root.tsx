@@ -87,8 +87,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "UBIQUITY — Cooperative Gig Services Network" },
       {
         property: "og:description",
-        content:
-          "Fair-pool matching, transparent cooperative pricing and 98% worker payouts.",
+        content: "Fair-pool matching, transparent cooperative pricing and 98% worker payouts.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

@@ -1,4 +1,12 @@
-export const API_BASE = "http://localhost:8000";
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 export type Worker = {
   id: string;
@@ -16,9 +24,19 @@ export type Worker = {
 };
 
 export type MatchResult = {
-  worker: Worker;
+  worker: Worker | null;
   nearby: Worker[];
   breakdown: { proximity: number; trust: number; idle: number };
+  clusterId: string;
+};
+
+export type BookingConfirmation = {
+  bookingId: string;
+  workerId: string;
+  grossAmount: number;
+  otpExpiresAt: string;
+  developmentOtp?: string;
+  developmentNote?: string;
 };
 
 export type SettlementResult = {
@@ -35,8 +53,23 @@ export type VoiceProfile = {
   fullName: string;
   skill: string;
   experience: string;
+  experienceYears: number;
   baseRate: number;
   zone: string;
+  subSkills: string[];
+};
+
+export type RegistrationResult = {
+  memberId: string;
+  registeredAt: string;
+};
+
+export type HealthResult = {
+  status: string;
+  demo_mode: boolean;
+  database: boolean;
+  voice_transcription_configured: boolean;
+  profile_extraction_configured: boolean;
 };
 
 export const CATEGORIES = [
@@ -55,230 +88,213 @@ export const LANGUAGES = [
   { code: "en", label: "English" },
 ] as const;
 
-export const CUSTOMER_LOCATION = { lat: 11.0168, lng: 76.9558 };
-
-async function post<T>(path: string, body: unknown): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-export async function checkBackend(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE}/`, { method: "GET" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/* ---------- normalisation helpers (backend shape may vary) ---------- */
-
-const num = (v: unknown, fallback: number) =>
-  typeof v === "number" && Number.isFinite(v) ? v : fallback;
-const str = (v: unknown, fallback: string) => (typeof v === "string" && v ? v : fallback);
-
-const SEED_WORKERS: Omit<Worker, "coopPrice" | "aggregatorPrice" | "skill">[] = [
-  { id: "w1", name: "Murugan S.", rating: 4.8, idleDays: 6, matchLabel: "Top Community Match", lat: 11.0231, lng: 76.9612, distanceKm: 1.2, verified: true },
-  { id: "w2", name: "Lakshmi R.", rating: 4.6, idleDays: 3, matchLabel: "Nearby Co-op Member", lat: 11.0104, lng: 76.9481, distanceKm: 1.9, verified: true },
-  { id: "w3", name: "Anbu K.", rating: 4.5, idleDays: 9, matchLabel: "Idle-Days Priority", lat: 11.0272, lng: 76.9439, distanceKm: 2.6, verified: true },
-  { id: "w4", name: "Selvi M.", rating: 4.7, idleDays: 2, matchLabel: "Nearby Co-op Member", lat: 11.0059, lng: 76.9668, distanceKm: 2.1, verified: true },
-  { id: "w5", name: "Ravi Chandran", rating: 4.4, idleDays: 11, matchLabel: "Idle-Days Priority", lat: 11.0325, lng: 76.9702, distanceKm: 3.4, verified: false },
-];
-
-const BASE_RATE: Record<string, number> = {
-  Plumbing: 198.4,
-  Electrical: 224.6,
-  "House Cleaning": 168.2,
-  Carpentry: 246.8,
-  Masonry: 262.5,
+export const API_BASE = (import.meta.env["VITE_API_BASE_URL"] ?? "http://localhost:8000").replace(
+  /\/$/,
+  "",
+);
+export const CUSTOMER_ID = import.meta.env["VITE_USER_ID"] ?? "demo-customer";
+export const USER_SIGNATURE = import.meta.env["VITE_USER_SIGNATURE"] ?? "";
+export const CUSTOMER_LOCATION = {
+  lat: Number(import.meta.env["VITE_CUSTOMER_LAT"] ?? 11.0168),
+  lng: Number(import.meta.env["VITE_CUSTOMER_LNG"] ?? 76.9558),
 };
 
-function mockMatch(category: string): MatchResult {
-  const base = BASE_RATE[category] ?? 198.4;
-  const nearby = SEED_WORKERS.map((w, i) => {
-    const coopPrice = Math.round((base + i * 11.3) * 100) / 100;
-    return {
-      ...w,
-      skill: category,
-      coopPrice,
-      aggregatorPrice: Math.round(coopPrice * 1.355 * 100) / 100,
-    } satisfies Worker;
-  });
-  return {
-    worker: nearby[0]!,
-    nearby,
-    breakdown: { proximity: 40, trust: 30, idle: 30 },
-  };
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("X-User-Id", CUSTOMER_ID);
+  if (USER_SIGNATURE) headers.set("X-User-Signature", USER_SIGNATURE);
+  if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(
+      "Unable to reach the cooperative service. Check that the backend is running.",
+      0,
+    );
+  }
+
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok) {
+    const detail =
+      typeof payload?.["detail"] === "string"
+        ? payload["detail"]
+        : `Request failed (${response.status})`;
+    throw new ApiError(detail, response.status);
+  }
+  return payload as T;
 }
 
-function normaliseWorker(raw: Record<string, unknown>, fallback: Worker): Worker {
-  const coop = num(raw["fair_price"] ?? raw["coop_price"] ?? raw["price"], fallback.coopPrice);
+export async function checkBackend(): Promise<HealthResult> {
+  return request<HealthResult>("/api/health", { method: "GET" });
+}
+
+const num = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const str = (value: unknown, fallback: string) =>
+  typeof value === "string" && value.trim() ? value : fallback;
+
+function normaliseWorker(raw: Record<string, unknown>, index: number): Worker {
+  const coopPrice = num(raw["fair_price_inr"], 0);
+  const idleDays = num(raw["idle_days"], 0);
+  const score = num(raw["fair_match_score"], 0);
   return {
-    id: str(raw["id"] ?? raw["worker_id"], fallback.id),
-    name: str(raw["name"] ?? raw["worker_name"], fallback.name),
-    skill: str(raw["skill"] ?? raw["category"], fallback.skill),
-    rating: num(raw["rating"] ?? raw["trust_rating"], fallback.rating),
-    idleDays: num(raw["idle_days"], fallback.idleDays),
-    matchLabel: str(raw["match_label"], fallback.matchLabel),
-    lat: num(raw["lat"] ?? raw["latitude"], fallback.lat),
-    lng: num(raw["lng"] ?? raw["lon"] ?? raw["longitude"], fallback.lng),
-    distanceKm: num(raw["distance_km"] ?? raw["distance"], fallback.distanceKm),
-    coopPrice: coop,
+    id: str(raw["worker_id"], `worker-${index + 1}`),
+    name: str(raw["full_name"], "Cooperative worker"),
+    skill: str(raw["skill"], "Local service"),
+    rating: num(raw["trust_rating"], 0),
+    idleDays,
+    matchLabel:
+      idleDays >= 8
+        ? "Idle-days priority"
+        : index === 0
+          ? "Top community match"
+          : "Nearby co-op member",
+    lat: num(raw["lat"], CUSTOMER_LOCATION.lat),
+    lng: num(raw["lng"], CUSTOMER_LOCATION.lng),
+    distanceKm: num(raw["distance_km"], 0),
+    coopPrice,
     aggregatorPrice: num(
-      raw["aggregator_price"] ?? raw["commercial_price"],
-      Math.round(coop * 1.355 * 100) / 100,
+      raw["commercial_aggregator_price_inr"],
+      Math.round(coopPrice * 1.35 * 100) / 100,
     ),
-    verified: raw["verified"] === false ? false : true,
+    verified: raw["verified"] !== false && score >= 0,
   };
 }
 
 export async function matchAndPrice(category: string): Promise<MatchResult> {
-  const fallback = mockMatch(category);
-  const data = await post<Record<string, unknown>>("/api/bookings/match-and-price", {
-    category,
-    service: category,
-    lat: CUSTOMER_LOCATION.lat,
-    lng: CUSTOMER_LOCATION.lng,
+  const data = await request<Record<string, unknown>>("/api/bookings/match-and-price", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: CUSTOMER_ID,
+      service_type: category,
+      customer_lat: CUSTOMER_LOCATION.lat,
+      customer_lng: CUSTOMER_LOCATION.lng,
+    }),
   });
-  if (!data) return fallback;
-
-  const rawList = (data["workers"] ?? data["matches"] ?? data["nearby"]) as unknown;
-  const list = Array.isArray(rawList) ? rawList : [];
-  const nearby = list.length
-    ? list
-        .slice(0, 6)
-        .map((r, i) =>
-          normaliseWorker(
-            (r ?? {}) as Record<string, unknown>,
-            fallback.nearby[i % fallback.nearby.length]!,
-          ),
-        )
-    : fallback.nearby;
-
-  const rawTop = (data["worker"] ?? data["best_match"] ?? data["match"]) as unknown;
-  const worker = rawTop
-    ? normaliseWorker(rawTop as Record<string, unknown>, nearby[0]!)
-    : nearby[0]!;
-
-  const bd = (data["breakdown"] ?? data["weights"] ?? {}) as Record<string, unknown>;
+  const rawList = data["all_ranked_candidates"];
+  const nearby = Array.isArray(rawList)
+    ? rawList.map((worker, index) =>
+        normaliseWorker((worker ?? {}) as Record<string, unknown>, index),
+      )
+    : [];
+  const rawSelected = data["selected_best_match"];
+  const rawBreakdown = (data["breakdown"] ?? {}) as Record<string, unknown>;
   return {
-    worker,
+    worker: rawSelected
+      ? normaliseWorker(rawSelected as Record<string, unknown>, 0)
+      : (nearby[0] ?? null),
     nearby,
+    clusterId: str(data["cluster_id"], "coimbatore-gandhipuram"),
     breakdown: {
-      proximity: num(bd["proximity"], 40),
-      trust: num(bd["trust"] ?? bd["trust_rating"], 30),
-      idle: num(bd["idle"] ?? bd["idle_days"], 30),
+      proximity: num(rawBreakdown["proximity"], 45),
+      trust: num(rawBreakdown["trust"], 35),
+      idle: num(rawBreakdown["idle"], 20),
     },
   };
 }
 
+export async function createBooking(
+  category: string,
+  worker: Worker,
+): Promise<BookingConfirmation> {
+  const data = await request<Record<string, unknown>>("/api/bookings", {
+    method: "POST",
+    body: JSON.stringify({
+      customer_id: CUSTOMER_ID,
+      service_type: category,
+      customer_lat: CUSTOMER_LOCATION.lat,
+      customer_lng: CUSTOMER_LOCATION.lng,
+      worker_id: worker.id,
+      agreed_amount: worker.coopPrice,
+    }),
+  });
+  const confirmation: BookingConfirmation = {
+    bookingId: str(data["booking_id"], ""),
+    workerId: str(data["worker_id"], worker.id),
+    grossAmount: num(data["gross_amount"], worker.coopPrice),
+    otpExpiresAt: str(data["otp_expires_at"], ""),
+  };
+  if (typeof data["development_otp"] === "string")
+    confirmation.developmentOtp = data["development_otp"];
+  if (typeof data["development_note"] === "string")
+    confirmation.developmentNote = data["development_note"];
+  return confirmation;
+}
+
+export async function cancelBooking(bookingId: string): Promise<void> {
+  await request(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, { method: "DELETE" });
+}
+
 export async function verifyAndSettle(
   otp: string,
+  bookingId: string,
   amount: number,
   workerId: string,
+  clusterId: string,
 ): Promise<SettlementResult> {
-  const round = (n: number) => Math.round(n * 100) / 100;
-  const fallback: SettlementResult = {
-    total: round(amount),
-    workerPayout: round(amount * 0.98),
-    pacsMaintenance: round(amount * 0.015),
-    mutualAidFund: round(amount * 0.005),
-    reference: `UBQ${Date.now().toString().slice(-8)}`,
-  };
-  const data = await post<Record<string, unknown>>("/api/bookings/verify-settle", {
-    otp,
-    amount,
-    worker_id: workerId,
+  const data = await request<Record<string, unknown>>("/api/bookings/verify-settle", {
+    method: "POST",
+    body: JSON.stringify({
+      booking_id: bookingId,
+      worker_id: workerId,
+      cluster_id: clusterId,
+      gross_amount: amount,
+      otp_code: otp,
+    }),
   });
-  if (!data) return fallback;
-  const s = (data["settlement"] ?? data) as Record<string, unknown>;
+  const settlement = (data["settlement_breakdown"] ?? {}) as Record<string, unknown>;
   return {
-    total: num(s["total"] ?? s["amount"], fallback.total),
-    workerPayout: num(s["worker_payout"] ?? s["worker"], fallback.workerPayout),
-    pacsMaintenance: num(s["pacs_maintenance"] ?? s["pacs"], fallback.pacsMaintenance),
-    mutualAidFund: num(s["mutual_aid_fund"] ?? s["mutual_aid"], fallback.mutualAidFund),
-    reference: str(s["reference"] ?? s["txn_id"], fallback.reference),
+    total: num(settlement["gross_amount_paid"], amount),
+    workerPayout: num(settlement["direct_worker_payout_98pct"], amount * 0.98),
+    pacsMaintenance: num(settlement["pacs_cooperative_maintenance_1_5pct"], amount * 0.015),
+    mutualAidFund: num(settlement["mutual_aid_emergency_pool_0_5pct"], amount * 0.005),
+    reference: str(data["reference"], "Pending reference"),
   };
 }
 
-const VOICE_SAMPLES: Record<string, VoiceProfile> = {
-  ta: {
-    transcript:
-      "என் பெயர் முருகன். நான் பத்து வருஷம் பிளம்பிங் வேலை செய்கிறேன். காந்திபுரம் பகுதியில் வேலை செய்வேன், ஒரு நாளுக்கு அறுநூறு ரூபாய்.",
-    language: "Tamil",
-    fullName: "Murugan S.",
-    skill: "Plumbing",
-    experience: "10 years",
-    baseRate: 600,
-    zone: "Gandhipuram, Coimbatore",
-  },
-  hi: {
-    transcript:
-      "मेरा नाम रमेश कुमार है। मैं आठ साल से बिजली का काम करता हूँ। करोल बाग इलाके में काम करता हूँ, दिन का पाँच सौ पचास रुपये।",
-    language: "Hindi",
-    fullName: "Ramesh Kumar",
-    skill: "Electrical",
-    experience: "8 years",
-    baseRate: 550,
-    zone: "Karol Bagh, Delhi",
-  },
-  te: {
-    transcript:
-      "నా పేరు వెంకటేష్. నేను ఏడు సంవత్సరాలు వడ్రంగి పని చేస్తున్నాను. కూకట్‌పల్లి ప్రాంతంలో పని, రోజుకు ఆరు వందల రూపాయలు.",
-    language: "Telugu",
-    fullName: "Venkatesh G.",
-    skill: "Carpentry",
-    experience: "7 years",
-    baseRate: 620,
-    zone: "Kukatpally, Hyderabad",
-  },
-  mr: {
-    transcript:
-      "माझं नाव संजय पाटील. मी बारा वर्षे गवंडी काम करतो. हडपसर भागात काम करतो, दिवसाचे सातशे रुपये.",
-    language: "Marathi",
-    fullName: "Sanjay Patil",
-    skill: "Masonry",
-    experience: "12 years",
-    baseRate: 700,
-    zone: "Hadapsar, Pune",
-  },
-  en: {
-    transcript:
-      "My name is Fatima Begum. I have six years of house cleaning experience. I work around Whitefield and my daily rate is five hundred rupees.",
-    language: "English",
-    fullName: "Fatima Begum",
-    skill: "House Cleaning",
-    experience: "6 years",
-    baseRate: 500,
-    zone: "Whitefield, Bengaluru",
-  },
-};
-
-export async function voiceOnboard(lang: string): Promise<VoiceProfile> {
-  const fallback = VOICE_SAMPLES[lang] ?? VOICE_SAMPLES["en"]!;
-  const data = await post<Record<string, unknown>>("/api/workers/voice-onboard", {
-    language: lang,
-    transcript: fallback.transcript,
+export async function voiceOnboard(lang: string, audio: Blob): Promise<VoiceProfile> {
+  const form = new FormData();
+  form.append("preferred_language", lang);
+  form.append("audio_file", audio, `voice-${lang}.webm`);
+  const data = await request<Record<string, unknown>>("/api/workers/voice-onboard", {
+    method: "POST",
+    body: form,
   });
-  if (!data) return fallback;
-  const p = (data["profile"] ?? data) as Record<string, unknown>;
+  const raw = (data["structured_profile"] ?? {}) as Record<string, unknown>;
+  const years = num(raw["experience_years"], 0);
   return {
-    transcript: str(data["transcript"] ?? p["transcript"], fallback.transcript),
-    language: str(p["language"], fallback.language),
-    fullName: str(p["full_name"] ?? p["name"], fallback.fullName),
-    skill: str(p["skill"] ?? p["primary_skill"], fallback.skill),
-    experience: str(p["experience"], fallback.experience),
-    baseRate: num(p["base_rate"] ?? p["rate"], fallback.baseRate),
-    zone: str(p["zone"] ?? p["service_zone"], fallback.zone),
+    transcript: str(data["transcription"], ""),
+    language: str(raw["language"], lang),
+    fullName: str(raw["full_name"], "Local Worker"),
+    skill: str(raw["primary_skill"], "General services"),
+    experience: `${years} year${years === 1 ? "" : "s"}`,
+    experienceYears: years,
+    baseRate: num(raw["base_rate_inr"], 0),
+    zone: str(raw["operating_zone"], "Local service area"),
+    subSkills: Array.isArray(raw["sub_skills"])
+      ? raw["sub_skills"].filter((item): item is string => typeof item === "string")
+      : [],
+  };
+}
+
+export async function registerWorker(profile: VoiceProfile): Promise<RegistrationResult> {
+  const data = await request<Record<string, unknown>>("/api/workers/register", {
+    method: "POST",
+    body: JSON.stringify({
+      transcript: profile.transcript,
+      language: profile.language,
+      full_name: profile.fullName,
+      primary_skill: profile.skill,
+      sub_skills: profile.subSkills,
+      experience_years: profile.experienceYears,
+      base_rate_inr: profile.baseRate,
+      operating_zone: profile.zone,
+    }),
+  });
+  return {
+    memberId: str(data["member_id"], ""),
+    registeredAt: str(data["registered_at"], ""),
   };
 }
 
