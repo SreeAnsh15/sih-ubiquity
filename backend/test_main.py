@@ -304,3 +304,26 @@ def test_registration_queue_and_admin_approval_promote_worker(tmp_path, monkeypa
     )
     assert promoted.status_code == 200
     assert any(item["worker_id"] == approved.json()["worker_id"] for item in promoted.json()["all_ranked_candidates"])
+
+
+def test_voice_onboarding_returns_deterministic_demo_profile(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    response = client.post(
+        "/api/workers/voice-onboard",
+        files={"audio_file": ("voice.webm", b"demo-audio", "audio/webm")},
+        data={"preferred_language": "ta"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transcript"] == "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன்."
+    assert payload["name"] == "Murugan S."
+    assert payload["trade"] == "Plumbing"
+    assert payload["experience_years"] == 7
+    assert payload["base_rate"] == 250.0
+    assert payload["phone"] == "+91 98765 43219"
+    assert payload["locality"] == "Gandhipuram"
+    assert payload["language"] == "ta"
+    assert payload["structured_profile"]["full_name"] == "Murugan S."
+    assert payload["structured_profile"]["primary_skill"] == "Plumbing"
+    assert payload["demo_fallback"] is True

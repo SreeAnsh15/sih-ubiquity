@@ -57,6 +57,16 @@ BASE_RATES = {
     "Carpentry": 246.8,
     "Masonry": 262.5,
 }
+DEMO_VOICE_PROFILE = {
+    "transcript": "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன்.",
+    "name": "Murugan S.",
+    "trade": "Plumbing",
+    "experience_years": 7,
+    "base_rate": 250.0,
+    "phone": "+91 98765 43219",
+    "locality": "Gandhipuram",
+    "language": "ta",
+}
 SEED_WORKERS = [
     ("w-101", "Murugan S.", "+91 9876543210", ["Plumbing", "Pipe Fitting"], 11.0231, 76.9612, 0.88, 6),
     ("w-102", "Lakshmi R.", "+91 9876543211", ["Electrical", "Appliance Repair"], 11.0104, 76.9481, 0.95, 3),
@@ -354,11 +364,21 @@ async def voice_onboard_worker(
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio recording is empty")
-    if not openai_client or not gemini_client:
-        raise HTTPException(
-            status_code=503,
-            detail="Voice onboarding is unavailable until OPENAI_API_KEY and GEMINI_API_KEY are configured",
-        )
+    if DEMO_MODE or not openai_client or not gemini_client:
+        return {
+            "status": "success",
+            **DEMO_VOICE_PROFILE,
+            "transcription": DEMO_VOICE_PROFILE["transcript"],
+            "structured_profile": {
+                "full_name": DEMO_VOICE_PROFILE["name"],
+                "primary_skill": DEMO_VOICE_PROFILE["trade"],
+                "sub_skills": ["Pipe fitting", "Sanitation"],
+                "experience_years": DEMO_VOICE_PROFILE["experience_years"],
+                "base_rate_inr": DEMO_VOICE_PROFILE["base_rate"],
+                "operating_zone": DEMO_VOICE_PROFILE["locality"],
+            },
+            "demo_fallback": True,
+        }
 
     try:
         buffer = io.BytesIO(audio_bytes)
