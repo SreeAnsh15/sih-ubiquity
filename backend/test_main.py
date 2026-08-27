@@ -347,3 +347,33 @@ def test_voice_onboarding_language_specific_fallbacks(tmp_path, monkeypatch):
         for key, value in expected.items():
             assert payload[key] == value
         assert payload["structured_profile"]["primary_skill"] == expected["trade"]
+
+
+def test_pending_worker_passbook_transitions_after_pacs_approval(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    worker_headers = {"X-User-Id": "worker-pending-flow"}
+    payload = {
+        "transcript": "My name is David Joseph, experienced carpenter in Gandhipuram.",
+        "language": "en",
+        "full_name": "David Joseph",
+        "primary_skill": "Carpentry",
+        "sub_skills": ["Woodwork"],
+        "experience_years": 8,
+        "base_rate_inr": 350,
+        "operating_zone": "Gandhipuram",
+    }
+    created = client.post("/api/workers/register", headers=worker_headers, json=payload)
+    assert created.status_code == 200
+    pending = client.get("/api/workers/welfare", headers=worker_headers, params={"worker_id": "worker-pending-flow"})
+    assert pending.status_code == 200
+    assert pending.json()["verification_badge"] == "PACS_PENDING"
+    assert pending.json()["registration_status"] == "pending_verification"
+
+    member_id = created.json()["member_id"]
+    approved = client.post(f"/api/admin/verification-queue/{member_id}/approve", headers={"X-User-Id": "demo-admin"}, json={})
+    assert approved.status_code == 200
+    verified = client.get("/api/workers/welfare", headers=worker_headers, params={"worker_id": "worker-pending-flow"})
+    assert verified.status_code == 200
+    assert verified.json()["verification_badge"] == "PACS_VERIFIED"
+    assert verified.json()["registration_status"] == "approved"

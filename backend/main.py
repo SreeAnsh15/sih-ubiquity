@@ -694,10 +694,36 @@ def resolve_worker_identity(request: Request, requested_worker_id: str) -> tuple
 
 @app.get("/api/workers/welfare")
 def worker_welfare(request: Request, worker_id: str = "worker_1") -> dict[str, Any]:
-    _actor, canonical_worker_id = resolve_worker_identity(request, worker_id)
+    actor = request.headers.get("X-User-Id", "").strip()
+    requested_worker_id = worker_id.strip() or "worker_1"
+    canonical_worker_id = WORKER_ALIASES.get(requested_worker_id, requested_worker_id)
+    if not actor:
+        raise HTTPException(status_code=401, detail="Worker identity is required")
+    if not DEMO_MODE:
+        require_actor(request, actor)
     with db_connect() as db:
+        registration = db.execute("SELECT * FROM worker_registrations WHERE user_id = ?", (actor,)).fetchone()
+        if registration and registration["verification_status"] == "approved":
+            canonical_worker_id = registration["member_id"].lower()
         worker = db.execute("SELECT * FROM workers WHERE worker_id = ?", (canonical_worker_id,)).fetchone()
         if not worker:
+            if registration and requested_worker_id in {actor, "worker_1"}:
+                return {
+                    "status": "success",
+                    "worker_id": actor,
+                    "member_id": registration["member_id"],
+                    "full_name": registration["full_name"],
+                    "primary_skill": registration["primary_skill"],
+                    "verification_badge": "PACS_PENDING",
+                    "lifetime_jobs_completed": 0,
+                    "total_take_home_earnings_inr": 0,
+                    "accrued_mutual_aid_inr": 0,
+                    "emergency_relief_claimed_inr": 0,
+                    "available_relief_balance_inr": 0,
+                    "completed_jobs": [],
+                    "emergency_relief_claims": [],
+                    "registration_status": "pending_verification",
+                }
             raise HTTPException(status_code=404, detail="Worker profile not found")
         rows = db.execute(
             """
@@ -734,6 +760,7 @@ def worker_welfare(request: Request, worker_id: str = "worker_1") -> dict[str, A
         "full_name": worker["full_name"],
         "primary_skill": json.loads(worker["skills_json"])[0],
         "verification_badge": "PACS_VERIFIED" if worker["is_verified"] else "PACS_PENDING",
+        "registration_status": "approved" if canonical_worker_id not in WORKER_ALIASES else None,
         "lifetime_jobs_completed": lifetime_jobs,
         "total_take_home_earnings_inr": total_earnings,
         "accrued_mutual_aid_inr": round(accrued, 2),

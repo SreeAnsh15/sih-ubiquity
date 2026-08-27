@@ -218,3 +218,32 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .form-grid .field-label { margin:0; }
 .form-grid .claim-input { margin-top:6px; }
 @media (max-width:620px) { .form-grid { grid-template-columns:1fr; } .voice-actions { align-items:flex-start; flex-direction:column; } }
+
+.persona-switcher { padding:8px 10px; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; font-size:10px; font-weight:800; }
+.landing-page { min-height:100vh; display:flex; flex-direction:column; color:var(--ink); background:radial-gradient(circle at 80% 10%,#ffedd566,transparent 30%),#f8fafc; }
+.landing-header { width:min(1180px,calc(100% - 48px)); display:flex; align-items:center; justify-content:space-between; margin:0 auto; padding:28px 0; }
+.landing-language { display:flex; align-items:center; gap:5px; color:#94a3b8; }
+.landing-language .language-switcher { border:0; background:transparent; }
+.landing-language .language-switcher.active { color:var(--ink); font-weight:800; }
+.landing-main { width:min(1020px,calc(100% - 48px)); margin:auto; padding:70px 0 90px; text-align:center; }
+.landing-eyebrow { color:#c2410c; font-size:11px; font-weight:900; letter-spacing:.14em; text-transform:uppercase; }
+.landing-main h1 { max-width:780px; margin:14px auto 18px; font-size:clamp(34px,6vw,66px); line-height:1.03; letter-spacing:-.045em; }
+.landing-subtitle { max-width:650px; margin:0 auto; color:var(--muted); font-size:16px; line-height:1.7; }
+.persona-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:48px auto 24px; text-align:left; }
+.persona-card { display:flex; align-items:center; gap:17px; min-height:205px; padding:26px; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 45px #0f172a0b; transition:transform .2s, box-shadow .2s, border-color .2s; }
+.persona-card:hover { transform:translateY(-4px); border-color:#fdba74; box-shadow:0 22px 55px #f9731620; }
+.persona-card .persona-icon { display:grid; place-items:center; width:58px; height:58px; flex:0 0 58px; color:#c2410c; background:#fff7ed; border-radius:16px; }
+.persona-card.worker .persona-icon { color:#047857; background:#ecfdf5; }
+.persona-card-copy { display:flex; flex:1; flex-direction:column; gap:7px; }
+.persona-card-copy small { color:#94a3b8; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+.persona-card-copy b { font-size:17px; line-height:1.25; }
+.persona-card-copy em { color:var(--muted); font-size:11px; font-style:normal; line-height:1.5; }
+.persona-badge { width:max-content; padding:5px 8px; color:#9a3412; background:#ffedd5; border-radius:999px; font-size:9px; font-weight:900; }
+.persona-card.worker .persona-badge { color:#047857; background:#d1fae5; }
+.landing-admin-link { display:inline-flex; align-items:center; gap:8px; padding:14px 18px; color:#475569; border:1px solid var(--line); border-radius:10px; font-size:11px; font-weight:800; }
+.landing-admin-link:hover { color:var(--ink); background:#fff; }
+.landing-footer { display:flex; align-items:center; justify-content:center; gap:7px; margin-top:auto; padding:24px; color:#94a3b8; border-top:1px solid var(--line); font-size:10px; }
+.onboarding-route-card { display:flex; justify-content:center; padding-bottom:60px; }
+.onboarding-inline-backdrop { width:100%; display:flex; justify-content:center; }
+.onboarding-inline-backdrop .onboarding-modal { width:100%; box-shadow:0 18px 55px #0f172a0b; }
+@media (max-width:780px) { .persona-grid { grid-template-columns:1fr; } .landing-main { padding-top:40px; } .top-header { align-items:flex-start; flex-direction:column; gap:15px; } .account-actions { width:100%; flex-wrap:wrap; } .persona-switcher { order:3; width:100%; } }

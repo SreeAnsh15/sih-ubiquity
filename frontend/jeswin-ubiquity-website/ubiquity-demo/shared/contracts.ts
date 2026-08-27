@@ -193,6 +193,7 @@ export interface WelfareResponse {
   full_name: string;
   primary_skill: string;
   verification_badge: "PACS_PENDING" | "PACS_VERIFIED";
+  registration_status?: "pending_verification" | "approved";
   lifetime_jobs_completed: number;
   total_take_home_earnings_inr: number;
   accrued_mutual_aid_inr: number;
