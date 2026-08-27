@@ -316,7 +316,7 @@ def test_voice_onboarding_returns_deterministic_demo_profile(tmp_path, monkeypat
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["transcript"] == "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன்."
+    assert payload["transcript"] == "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன், பேஸ் ரேட் 250 ரூபாய்."
     assert payload["name"] == "Murugan S."
     assert payload["trade"] == "Plumbing"
     assert payload["experience_years"] == 7
@@ -327,3 +327,23 @@ def test_voice_onboarding_returns_deterministic_demo_profile(tmp_path, monkeypat
     assert payload["structured_profile"]["full_name"] == "Murugan S."
     assert payload["structured_profile"]["primary_skill"] == "Plumbing"
     assert payload["demo_fallback"] is True
+
+
+def test_voice_onboarding_language_specific_fallbacks(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    for language, expected in {
+        "hi": {"name": "Rajesh Sharma", "trade": "Electrical", "experience_years": 5, "base_rate": 300.0, "phone": "+91 98765 43220"},
+        "en": {"name": "David Joseph", "trade": "Carpentry", "experience_years": 8, "base_rate": 350.0, "phone": "+91 98765 43221"},
+    }.items():
+        response = client.post(
+            "/api/workers/voice-onboard",
+            files={"audio_file": ("voice.webm", b"demo-audio", "audio/webm")},
+            data={"language_hint": language},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["language"] == language
+        for key, value in expected.items():
+            assert payload[key] == value
+        assert payload["structured_profile"]["primary_skill"] == expected["trade"]

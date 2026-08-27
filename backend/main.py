@@ -57,15 +57,40 @@ BASE_RATES = {
     "Carpentry": 246.8,
     "Masonry": 262.5,
 }
-DEMO_VOICE_PROFILE = {
-    "transcript": "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன்.",
-    "name": "Murugan S.",
-    "trade": "Plumbing",
-    "experience_years": 7,
-    "base_rate": 250.0,
-    "phone": "+91 98765 43219",
-    "locality": "Gandhipuram",
-    "language": "ta",
+DEMO_VOICE_PROFILES = {
+    "ta": {
+        "transcript": "என் பெயர் முருகன், காந்திபுரத்தில் 7 வருடங்களாக பிளம்பிங் வேலை செய்கிறேன், பேஸ் ரேட் 250 ரூபாய்.",
+        "name": "Murugan S.",
+        "trade": "Plumbing",
+        "experience_years": 7,
+        "base_rate": 250.0,
+        "phone": "+91 98765 43219",
+        "locality": "Gandhipuram",
+        "language": "ta",
+        "sub_skills": ["Pipe fitting", "Sanitation"],
+    },
+    "hi": {
+        "transcript": "मेरा नाम राजेश शर्मा है, मैं गांधीपुरम में 5 साल से इलेक्ट्रीशियन का काम करता हूँ, बेसिक चार्ज 300 रुपये।",
+        "name": "Rajesh Sharma",
+        "trade": "Electrical",
+        "experience_years": 5,
+        "base_rate": 300.0,
+        "phone": "+91 98765 43220",
+        "locality": "Gandhipuram",
+        "language": "hi",
+        "sub_skills": ["Wiring", "Appliance repair"],
+    },
+    "en": {
+        "transcript": "My name is David Joseph, experienced carpenter with 8 years of practice in Gandhipuram, base rate 350 rupees.",
+        "name": "David Joseph",
+        "trade": "Carpentry",
+        "experience_years": 8,
+        "base_rate": 350.0,
+        "phone": "+91 98765 43221",
+        "locality": "Gandhipuram",
+        "language": "en",
+        "sub_skills": ["Furniture repair", "Woodwork"],
+    },
 }
 SEED_WORKERS = [
     ("w-101", "Murugan S.", "+91 9876543210", ["Plumbing", "Pipe Fitting"], 11.0231, 76.9612, 0.88, 6),
@@ -354,8 +379,11 @@ def health() -> dict[str, Any]:
 async def voice_onboard_worker(
     audio_file: UploadFile = File(...),
     preferred_language: str = Form("ta"),
+    language_hint: str | None = Form(None),
+    language: str | None = Form(None),
 ) -> dict[str, Any]:
-    if preferred_language not in SUPPORTED_LANGUAGES:
+    requested_language = (language_hint or language or preferred_language or "ta").strip().lower()
+    if requested_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Unsupported language")
     if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
         raise HTTPException(status_code=415, detail="Upload an audio recording")
@@ -365,17 +393,18 @@ async def voice_onboard_worker(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio recording is empty")
     if DEMO_MODE or not openai_client or not gemini_client:
+        profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
         return {
             "status": "success",
-            **DEMO_VOICE_PROFILE,
-            "transcription": DEMO_VOICE_PROFILE["transcript"],
+            **profile,
+            "transcription": profile["transcript"],
             "structured_profile": {
-                "full_name": DEMO_VOICE_PROFILE["name"],
-                "primary_skill": DEMO_VOICE_PROFILE["trade"],
-                "sub_skills": ["Pipe fitting", "Sanitation"],
-                "experience_years": DEMO_VOICE_PROFILE["experience_years"],
-                "base_rate_inr": DEMO_VOICE_PROFILE["base_rate"],
-                "operating_zone": DEMO_VOICE_PROFILE["locality"],
+                "full_name": profile["name"],
+                "primary_skill": profile["trade"],
+                "sub_skills": profile["sub_skills"],
+                "experience_years": profile["experience_years"],
+                "base_rate_inr": profile["base_rate"],
+                "operating_zone": profile["locality"],
             },
             "demo_fallback": True,
         }
@@ -386,7 +415,7 @@ async def voice_onboard_worker(
         transcription = openai_client.audio.transcriptions.create(
             model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
             file=buffer,
-            language=preferred_language,
+            language=requested_language,
         )
         transcription_text = transcription.text.strip()
         if not transcription_text:

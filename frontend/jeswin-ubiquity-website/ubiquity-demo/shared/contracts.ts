@@ -90,7 +90,16 @@ export interface VoiceProfile {
 
 export interface VoiceOnboardResponse {
   status: "success";
+  transcript: string;
   transcription: string;
+  name: string;
+  trade: string;
+  experience_years: number;
+  base_rate: number;
+  phone: string;
+  locality: string;
+  language: string;
+  demo_fallback?: boolean;
   structured_profile: VoiceProfile;
 }
 

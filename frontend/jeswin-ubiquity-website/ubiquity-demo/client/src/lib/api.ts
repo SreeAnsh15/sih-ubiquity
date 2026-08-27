@@ -69,10 +69,11 @@ export const api = {
   createBooking: (body: CreateBookingRequest) => jsonRequest<BookingResponse>("/api/bookings", body),
   cancelBooking: (bookingId: string) => request<CancelResponse>(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, { method: "DELETE" }),
   settleBooking: (body: { booking_id: string; worker_id: string; cluster_id: string; gross_amount: number; otp_code: string }) => jsonRequest<SettlementResponse>("/api/bookings/verify-settle", body),
-  voiceOnboard: async (audio: Blob, language: string) => {
+  voiceOnboard: async (audio: Blob, language: string, sample = false) => {
     const form = new FormData();
-    form.append("audio_file", audio, "voice.webm");
+    form.append("audio_file", audio, sample ? "sample-voice.webm" : "voice.webm");
     form.append("preferred_language", language);
+    form.append("language_hint", language);
     return request<VoiceOnboardResponse>("/api/workers/voice-onboard", { method: "POST", body: form });
   },
   registerWorker: (body: RegisterWorkerRequest) => jsonRequest<RegisterWorkerResponse>("/api/workers/register", body),
