@@ -37,6 +37,7 @@ OTP_TTL_MINUTES = 30
 MAX_OTP_ATTEMPTS = 5
 CLUSTER_ID = "coimbatore-gandhipuram"
 ADMIN_USER_IDS = {item.strip() for item in os.getenv("ADMIN_USER_IDS", "demo-admin,admin").split(",") if item.strip()}
+WORKER_ALIASES = {"worker_1": "w-103", "demo-worker": "w-103"}
 SUPPORTED_LANGUAGES = {"ta", "hi", "te", "mr", "en"}
 SUPPORTED_SERVICES = {
     "plumbing": "Plumbing",
@@ -59,7 +60,7 @@ BASE_RATES = {
 SEED_WORKERS = [
     ("w-101", "Murugan S.", "+91 9876543210", ["Plumbing", "Pipe Fitting"], 11.0231, 76.9612, 0.88, 6),
     ("w-102", "Lakshmi R.", "+91 9876543211", ["Electrical", "Appliance Repair"], 11.0104, 76.9481, 0.95, 3),
-    ("w-103", "Anbu K.", "+91 9876543212", ["Carpentry", "Furniture Repair"], 11.0272, 76.9439, 0.90, 9),
+    ("w-103", "Anbu Kumar", "+91 9876543212", ["Carpentry", "Furniture Repair"], 11.0272, 76.9439, 0.90, 9),
     ("w-104", "Selvi M.", "+91 9876543213", ["House Cleaning", "Housekeeping"], 11.0059, 76.9668, 0.92, 2),
     ("w-105", "Ravi Chandran", "+91 9876543214", ["Masonry", "Plastering"], 11.0325, 76.9702, 0.84, 11),
 ]
@@ -133,6 +134,14 @@ def init_db() -> None:
                 language TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 verification_status TEXT NOT NULL DEFAULT 'pending'
+            );
+            CREATE TABLE IF NOT EXISTS welfare_claims (
+                id TEXT PRIMARY KEY,
+                worker_id TEXT NOT NULL REFERENCES workers(worker_id),
+                amount REAL NOT NULL CHECK (amount > 0),
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+                created_at TEXT NOT NULL
             );
             """
         )
@@ -222,6 +231,11 @@ class SettleBookingRequest(BaseModel):
     cluster_id: str = Field(min_length=2, max_length=80)
     gross_amount: float = Field(gt=0, le=100000)
     otp_code: str = Field(pattern=r"^\d{4}$")
+
+
+class WelfareClaimRequest(BaseModel):
+    amount: float = Field(gt=0, le=100000)
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class RegisterWorkerRequest(BaseModel):
@@ -614,3 +628,88 @@ def verify_and_settle_job(req: SettleBookingRequest, request: Request) -> dict[s
         },
         "reference": reference,
     }
+
+
+def resolve_worker_identity(request: Request, requested_worker_id: str) -> tuple[str, str]:
+    actor = request.headers.get("X-User-Id", "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="Worker identity is required")
+    canonical_id = WORKER_ALIASES.get(requested_worker_id.strip(), requested_worker_id.strip())
+    actor_worker_id = WORKER_ALIASES.get(actor, actor)
+    if actor_worker_id != canonical_id:
+        raise HTTPException(status_code=403, detail="Worker does not own this welfare profile")
+    if not DEMO_MODE:
+        require_actor(request, actor)
+    return actor, canonical_id
+
+
+@app.get("/api/workers/welfare")
+def worker_welfare(request: Request, worker_id: str = "worker_1") -> dict[str, Any]:
+    _actor, canonical_worker_id = resolve_worker_identity(request, worker_id)
+    with db_connect() as db:
+        worker = db.execute("SELECT * FROM workers WHERE worker_id = ?", (canonical_worker_id,)).fetchone()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker profile not found")
+        rows = db.execute(
+            """
+            SELECT b.booking_id, b.service_type, b.customer_id, b.gross_amount,
+                   b.settled_at, s.worker_payout, s.mutual_aid_fund, s.reference
+            FROM bookings b
+            JOIN settlements s ON s.booking_id = b.booking_id
+            WHERE b.worker_id = ? AND b.status = 'settled'
+            ORDER BY b.settled_at DESC
+            """,
+            (canonical_worker_id,),
+        ).fetchall()
+        accrued = float(db.execute("SELECT COALESCE(SUM(mutual_aid_fund), 0) FROM settlements WHERE booking_id IN (SELECT booking_id FROM bookings WHERE worker_id = ?)", (canonical_worker_id,)).fetchone()[0])
+        approved_claims = float(db.execute("SELECT COALESCE(SUM(amount), 0) FROM welfare_claims WHERE worker_id = ? AND status = 'approved'", (canonical_worker_id,)).fetchone()[0])
+        claims = db.execute("SELECT id, amount, reason, status, created_at FROM welfare_claims WHERE worker_id = ? ORDER BY created_at DESC LIMIT 10", (canonical_worker_id,)).fetchall()
+    lifetime_jobs = len(rows)
+    total_earnings = round(sum(float(row["worker_payout"]) for row in rows), 2)
+    ledger_rows = [
+        {
+            "booking_id": row["booking_id"],
+            "date": row["settled_at"],
+            "service": row["service_type"],
+            "customer_fee": round(float(row["gross_amount"]), 2),
+            "worker_payout_98pct": round(float(row["worker_payout"]), 2),
+            "reserve_contribution_0_5pct": round(float(row["mutual_aid_fund"]), 2),
+            "reference": row["reference"],
+        }
+        for row in rows
+    ]
+    return {
+        "status": "success",
+        "worker_id": canonical_worker_id,
+        "member_id": canonical_worker_id,
+        "full_name": worker["full_name"],
+        "primary_skill": json.loads(worker["skills_json"])[0],
+        "verification_badge": "PACS_VERIFIED" if worker["is_verified"] else "PACS_PENDING",
+        "lifetime_jobs_completed": lifetime_jobs,
+        "total_take_home_earnings_inr": total_earnings,
+        "accrued_mutual_aid_inr": round(accrued, 2),
+        "emergency_relief_claimed_inr": round(approved_claims, 2),
+        "available_relief_balance_inr": round(max(0.0, accrued - approved_claims), 2),
+        "completed_jobs": ledger_rows,
+        "emergency_relief_claims": [
+            {"claim_id": row["id"], "worker_id": canonical_worker_id, "amount_inr": row["amount"], "reason": row["reason"], "status": row["status"], "created_at": row["created_at"]}
+            for row in claims
+        ],
+    }
+
+
+@app.post("/api/workers/welfare/claims")
+def submit_welfare_claim(req: WelfareClaimRequest, request: Request, worker_id: str = "worker_1") -> dict[str, Any]:
+    _actor, canonical_worker_id = resolve_worker_identity(request, worker_id)
+    claim_id = f"claim_{uuid.uuid4().hex[:12]}"
+    now = utc_now().isoformat()
+    with db_connect() as db:
+        worker = db.execute("SELECT worker_id FROM workers WHERE worker_id = ?", (canonical_worker_id,)).fetchone()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker profile not found")
+        accrued = float(db.execute("SELECT COALESCE(SUM(mutual_aid_fund), 0) FROM settlements WHERE booking_id IN (SELECT booking_id FROM bookings WHERE worker_id = ?)", (canonical_worker_id,)).fetchone()[0])
+        reserved = float(db.execute("SELECT COALESCE(SUM(amount), 0) FROM welfare_claims WHERE worker_id = ? AND status IN ('pending', 'approved')", (canonical_worker_id,)).fetchone()[0])
+        if req.amount > round(accrued - reserved, 2):
+            raise HTTPException(status_code=400, detail="Claim exceeds the available mutual-aid balance")
+        db.execute("INSERT INTO welfare_claims (id, worker_id, amount, reason, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)", (claim_id, canonical_worker_id, round(req.amount, 2), req.reason.strip(), now))
+    return {"status": "submitted", "claim_id": claim_id, "worker_id": canonical_worker_id, "amount_inr": round(req.amount, 2), "submitted_at": now}

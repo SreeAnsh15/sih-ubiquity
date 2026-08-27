@@ -160,12 +160,21 @@ export interface DemandForecastResponse {
 
 export interface WelfareClaim {
   claim_id: string;
-  user_id: string;
-  member_id: string | null;
+  worker_id: string;
   amount_inr: number;
   reason: string;
-  status: "submitted" | "approved" | "rejected";
+  status: "pending" | "submitted" | "approved" | "rejected";
   created_at: string;
+}
+
+export interface WelfareLedgerRow {
+  booking_id: string;
+  date: string;
+  service: string;
+  customer_fee: number;
+  worker_payout_98pct: number;
+  reserve_contribution_0_5pct: number;
+  reference: string;
 }
 
 export interface WelfareResponse {
@@ -173,15 +182,19 @@ export interface WelfareResponse {
   worker_id: string;
   member_id: string | null;
   full_name: string;
+  primary_skill: string;
   verification_badge: "PACS_PENDING" | "PACS_VERIFIED";
+  lifetime_jobs_completed: number;
+  total_take_home_earnings_inr: number;
   accrued_mutual_aid_inr: number;
   emergency_relief_claimed_inr: number;
   available_relief_balance_inr: number;
+  completed_jobs: WelfareLedgerRow[];
   emergency_relief_claims: WelfareClaim[];
 }
 
 export interface MutualAidClaimRequest {
-  amount_inr: number;
+  amount: number;
   reason: string;
 }
 

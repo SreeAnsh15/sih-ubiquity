@@ -233,3 +233,40 @@ def test_cancellation_and_otp_lock(tmp_path, monkeypatch):
         },
     )
     assert locked.status_code == 429
+
+
+def test_worker_welfare_passbook_and_claim(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    customer_headers = {"X-User-Id": "welfare-customer"}
+    match_payload = {
+        "customer_id": "welfare-customer",
+        "service_type": "Carpentry",
+        "customer_lat": 11.0168,
+        "customer_lng": 76.9558,
+    }
+    match = client.post("/api/bookings/match-and-price", headers=customer_headers, json=match_payload)
+    assert match.status_code == 200
+    worker = match.json()["selected_best_match"]
+    booking = client.post("/api/bookings", headers=customer_headers, json={**match_payload, "worker_id": worker["worker_id"], "agreed_amount": worker["fair_price_inr"]})
+    assert booking.status_code == 200
+    confirmation = booking.json()
+    settled = client.post("/api/bookings/verify-settle", headers=customer_headers, json={"booking_id": confirmation["booking_id"], "worker_id": worker["worker_id"], "cluster_id": "coimbatore-gandhipuram", "gross_amount": confirmation["gross_amount"], "otp_code": confirmation["development_otp"]})
+    assert settled.status_code == 200
+
+    worker_headers = {"X-User-Id": "worker_1"}
+    welfare = client.get("/api/workers/welfare", headers=worker_headers)
+    assert welfare.status_code == 200
+    payload = welfare.json()
+    assert payload["worker_id"] == "w-103"
+    assert payload["full_name"] == "Anbu Kumar"
+    assert payload["lifetime_jobs_completed"] == 1
+    assert payload["total_take_home_earnings_inr"] > 0
+    assert payload["accrued_mutual_aid_inr"] > 0
+    assert len(payload["completed_jobs"]) == 1
+
+    claim = client.post("/api/workers/welfare/claims", headers=worker_headers, json={"amount": 1, "reason": "Emergency medical support"})
+    assert claim.status_code == 200
+    assert claim.json()["status"] == "submitted"
+    refreshed = client.get("/api/workers/welfare", headers=worker_headers).json()
+    assert refreshed["emergency_relief_claims"][0]["status"] == "pending"
