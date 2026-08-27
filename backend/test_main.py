@@ -270,3 +270,37 @@ def test_worker_welfare_passbook_and_claim(tmp_path, monkeypatch):
     assert claim.json()["status"] == "submitted"
     refreshed = client.get("/api/workers/welfare", headers=worker_headers).json()
     assert refreshed["emergency_relief_claims"][0]["status"] == "pending"
+
+
+def test_registration_queue_and_admin_approval_promote_worker(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    registration = client.post(
+        "/api/workers/register",
+        headers={"X-User-Id": "worker-new"},
+        json={
+            "transcript": "I am Murugan, a plumber serving Gandhipuram.",
+            "language": "ta",
+            "full_name": "Murugan S.",
+            "primary_skill": "Plumbing",
+            "sub_skills": ["Pipe fitting"],
+            "experience_years": 11,
+            "base_rate_inr": 420,
+            "operating_zone": "Gandhipuram",
+        },
+    )
+    assert registration.status_code == 200
+    member_id = registration.json()["member_id"]
+    admin_headers = {"X-User-Id": "demo-admin"}
+    queue = client.get("/api/admin/verification-queue", headers=admin_headers)
+    assert queue.status_code == 200
+    assert any(item["member_id"] == member_id for item in queue.json()["items"])
+    approved = client.post(f"/api/admin/verification-queue/{member_id}/approve", headers=admin_headers, json={})
+    assert approved.status_code == 200
+    promoted = client.post(
+        "/api/bookings/match-and-price",
+        headers={"X-User-Id": "presentation-customer"},
+        json={"customer_id": "presentation-customer", "service_type": "Plumbing", "customer_lat": 11.0168, "customer_lng": 76.9558},
+    )
+    assert promoted.status_code == 200
+    assert any(item["worker_id"] == approved.json()["worker_id"] for item in promoted.json()["all_ranked_candidates"])

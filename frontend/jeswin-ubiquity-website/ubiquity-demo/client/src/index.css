@@ -198,3 +198,23 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .claim-reason { min-height:90px; resize:vertical; }
 .field-help { display:block; margin-top:5px; color:#94a3b8; font-size:10px; }
 @media (max-width:700px) { .claim-button { width:100%; margin-top:14px; } .claim-row { grid-template-columns:1fr auto; } .claim-status { grid-column:2; grid-row:1; } }
+
+.register-worker-nav { display:flex; align-items:center; justify-content:center; gap:8px; width:calc(100% - 28px); margin:8px 14px 18px; padding:11px 10px; color:#9a3412; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; font-size:11px; font-weight:800; cursor:pointer; transition:background .2s, transform .2s; }
+.register-worker-nav:hover { background:#ffedd5; transform:translateY(-1px); }
+.onboarding-modal { max-width:680px; max-height:90vh; overflow-y:auto; }
+.onboarding-hero { display:flex; align-items:flex-start; gap:13px; padding-right:24px; }
+.onboarding-icon { display:grid; place-items:center; width:44px; height:44px; flex:0 0 44px; color:#fff; background:linear-gradient(135deg,#f97316,#ea580c); border-radius:12px; box-shadow:0 8px 18px #f9731633; }
+.voice-options { margin-top:20px; padding:15px; background:#f8fafc; border:1px solid var(--line); border-radius:12px; }
+.voice-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px; }
+.voice-actions .secondary-button { display:inline-flex; align-items:center; gap:7px; }
+.text-button { padding:8px 0; color:#c2410c; background:none; border:0; font-size:11px; font-weight:800; cursor:pointer; }
+.text-button:hover { text-decoration:underline; }
+.recording { color:#b91c1c !important; border-color:#fecaca !important; background:#fef2f2 !important; }
+.record-dot { width:8px; height:8px; background:#ef4444; border-radius:50%; box-shadow:0 0 0 4px #fecaca; }
+.review-form { margin-top:20px; padding-top:18px; border-top:1px solid var(--line); }
+.review-form h3 { margin:4px 0 0; color:var(--ink); font-size:17px; }
+.review-form .section-title { align-items:flex-start; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:15px 0 18px; }
+.form-grid .field-label { margin:0; }
+.form-grid .claim-input { margin-top:6px; }
+@media (max-width:620px) { .form-grid { grid-template-columns:1fr; } .voice-actions { align-items:flex-start; flex-direction:column; } }
