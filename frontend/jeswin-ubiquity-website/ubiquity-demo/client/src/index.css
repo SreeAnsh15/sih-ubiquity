@@ -137,3 +137,35 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .spin { animation:spin 1s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 @media (max-width:1000px) { .shell { flex-direction:column; } .sidebar { width:100%; height:auto; position:static; padding:20px; } .brand { margin-bottom:20px; } .sidebar-nav { grid-template-columns:repeat(2,1fr); } .main-content { padding:32px 20px; } .customer-grid,.admin-grid,.metric-grid { grid-template-columns:1fr; } }
+
+.top-header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding-bottom:30px; border-bottom:1px solid var(--line); margin-bottom:42px; }
+.top-kicker { margin:0 0 6px; color:#94a3b8; font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.top-header h2 { margin:0; font:700 24px 'Space Grotesk',sans-serif; letter-spacing:-.03em; }
+.account-actions { display:flex; align-items:center; gap:12px; }
+.language-switcher,.notification-button { position:relative; display:flex; align-items:center; gap:6px; padding:9px 11px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:8px; font-size:11px; font-weight:700; }
+.notification-button i { position:absolute; top:-6px; right:-6px; min-width:16px; height:16px; display:grid; place-items:center; color:#fff; background:var(--saffron); border:2px solid var(--bg); border-radius:50%; font-size:8px; font-style:normal; }
+.account-pill { display:flex; align-items:center; gap:9px; padding:5px 8px 5px 5px; background:#fff; border:1px solid var(--line); border-radius:999px; }
+.account-pill span { display:block; }
+.account-pill b { display:block; font-size:11px; }
+.account-pill small { display:block; color:#94a3b8; font-size:9px; }
+.category-section { margin-bottom:24px; }
+.category-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
+.category-heading h2 { margin:0; font:700 20px 'Space Grotesk',sans-serif; }
+.emergency-toggle { display:flex; align-items:center; gap:7px; padding:10px 13px; color:#b91c1c; background:#fff1f2; border:1px solid #fecdd3; border-radius:8px; font-size:11px; font-weight:800; }
+.emergency-toggle.active { color:#fff; background:#dc2626; border-color:#dc2626; box-shadow:0 5px 14px rgba(220,38,38,.2); }
+.emergency-toggle small { font-size:9px; opacity:.75; }
+.category-grid { display:grid; grid-template-columns:repeat(8, minmax(92px,1fr)); gap:8px; overflow-x:auto; }
+.category-card { min-height:96px; display:grid; align-content:center; justify-items:start; gap:5px; padding:13px; color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:11px; text-align:left; transition:.18s ease; }
+.category-card:hover,.category-card.active { color:var(--saffron-dark); border-color:#fdba74; background:#fff7ed; transform:translateY(-2px); }
+.category-card span { width:30px; height:30px; display:grid; place-items:center; color:var(--saffron); background:#ffedd5; border-radius:8px; }
+.category-card b { font-size:11px; }
+.category-card small { color:#94a3b8; font-size:9px; white-space:nowrap; }
+.category-card.future { opacity:.7; }
+.next-service-card { margin-top:14px; padding:17px; background:#fff; border:1px solid var(--line); border-radius:14px; }
+.next-service-title { display:flex; align-items:center; gap:7px; color:var(--ink); margin-bottom:10px; }
+.next-service-title span { flex:1; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; }
+.next-service-title small { color:var(--emerald); font-size:9px; font-weight:800; }
+.next-service-card>b { display:block; font-size:13px; }
+.next-service-card>p { margin:5px 0 0; color:var(--muted); font-size:11px; line-height:1.4; }
+@media (max-width:1000px) { .top-header { align-items:flex-start; flex-direction:column; margin-bottom:28px; } .account-actions { width:100%; justify-content:space-between; } .category-grid { grid-template-columns:repeat(8,110px); } }
+@media (max-width:600px) { .main-content { padding:24px 14px; } .page-heading h1 { font-size:34px; } .category-heading { align-items:flex-start; flex-direction:column; } .service-toolbar { align-items:flex-start; flex-direction:column; } .service-toolbar .primary-button { width:100%; } .worker-card { align-items:flex-start; flex-wrap:wrap; } .worker-quote { width:100%; display:flex; align-items:center; justify-content:space-between; text-align:left; } .account-pill { display:none; } }

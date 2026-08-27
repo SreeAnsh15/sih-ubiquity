@@ -30,7 +30,7 @@ except ImportError:  # Optional until voice AI is configured.
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "ubiquity.db")))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+DEMO_MODE = os.getenv("DEMO_MODE", "true").lower() == "true"
 AUTH_SECRET = os.getenv("AUTH_SECRET", "")
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 OTP_TTL_MINUTES = 30
@@ -200,6 +200,7 @@ class BookingRequest(BaseModel):
     service_type: str = Field(min_length=2, max_length=60)
     customer_lat: float = Field(ge=-90, le=90)
     customer_lng: float = Field(ge=-180, le=180)
+    emergency: bool = False
 
     @field_validator("service_type")
     @classmethod
@@ -479,7 +480,7 @@ def match_worker_and_price(req: BookingRequest, request: Request) -> dict[str, A
             if active_booking_count(db, worker["worker_id"]) >= worker["capacity"]:
                 continue
             distance = haversine_km(req.customer_lat, req.customer_lng, worker["lat"], worker["lng"])
-            if distance > 5:
+            if distance > 5 or (req.emergency and distance >= 2):
                 continue
             proximity_score = max(0.0, 1.0 - distance / 5.0)
             idle_score = min(1.0, worker["idle_days"] / 10.0)
@@ -494,6 +495,7 @@ def match_worker_and_price(req: BookingRequest, request: Request) -> dict[str, A
         "selected_best_match": candidates[0] if candidates else None,
         "all_ranked_candidates": candidates,
         "breakdown": {"proximity": 45, "trust": 35, "idle": 20},
+        "emergency_dispatch": {"requested": req.emergency, "radius_km": 2 if req.emergency else 5, "priority": "high" if req.emergency else "standard", "requires_idle_worker": req.emergency},
     }
 
 
@@ -513,8 +515,8 @@ def create_booking(req: CreateBookingRequest, request: Request) -> dict[str, Any
         if not worker:
             raise HTTPException(status_code=404, detail="Worker is unavailable")
         distance = haversine_km(req.customer_lat, req.customer_lng, worker["lat"], worker["lng"])
-        if distance > 5:
-            raise HTTPException(status_code=400, detail="Worker is outside the service radius")
+        if distance > 5 or (req.emergency and distance >= 2):
+            raise HTTPException(status_code=400, detail="Worker is outside the emergency service radius" if req.emergency else "Worker is outside the service radius")
         if active_booking_count(db, req.worker_id) >= worker["capacity"]:
             raise HTTPException(status_code=409, detail="Worker is already handling another booking")
         expected_amount = round(BASE_RATES[req.service_type] + distance * 15, 2)

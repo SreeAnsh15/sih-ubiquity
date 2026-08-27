@@ -23,7 +23,8 @@ const USER_SIGNATURE_KEY = "ubiquity.user-signature";
 export const apiConfig = { baseUrl: API_BASE_URL };
 
 export function getIdentity(): { userId: string; signature?: string } {
-  const userId = localStorage.getItem(USER_ID_KEY) || "demo-customer";
+  const storedUserId = localStorage.getItem(USER_ID_KEY)?.trim();
+  const userId = storedUserId || "demo-customer";
   const signature = localStorage.getItem(USER_SIGNATURE_KEY) || undefined;
   return { userId, signature };
 }
@@ -38,7 +39,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const identity = getIdentity();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  headers.set("X-User-Id", identity.userId);
+  headers.set("X-User-Id", identity.userId || "demo-customer");
   if (identity.signature) headers.set("X-User-Signature", identity.signature);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
