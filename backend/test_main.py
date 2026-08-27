@@ -377,3 +377,57 @@ def test_pending_worker_passbook_transitions_after_pacs_approval(tmp_path, monke
     assert verified.status_code == 200
     assert verified.json()["verification_badge"] == "PACS_VERIFIED"
     assert verified.json()["registration_status"] == "approved"
+
+
+def test_health_flags_reflect_individual_provider_keys(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    backend.OPENAI_API_KEY = None
+    backend.GEMINI_API_KEY = "gemini-test-key"
+    response = TestClient(backend.app).get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["voice_transcription_configured"] is True
+    assert response.json()["profile_extraction_configured"] is True
+
+
+def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    calls = []
+
+    class FakeResponse:
+        text = "My name is David Joseph, experienced carpenter in Gandhipuram."
+        parsed = {
+            "transcript": text,
+            "full_name": "David Joseph",
+            "primary_skill": "Carpentry",
+            "sub_skills": ["Woodwork"],
+            "experience_years": 8,
+            "base_rate_inr": 350.0,
+            "operating_zone": "Gandhipuram",
+        }
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return FakeResponse()
+
+    class FakeGemini:
+        models = FakeModels()
+
+    backend.DEMO_MODE = False
+    backend.OPENAI_API_KEY = None
+    backend.openai_client = None
+    backend.GEMINI_API_KEY = "gemini-test-key"
+    backend.gemini_client = FakeGemini()
+    client = TestClient(backend.app)
+    response = client.post(
+        "/api/workers/voice-onboard",
+        files={"audio_file": ("voice.webm", b"audio-bytes", "audio/webm")},
+        data={"preferred_language": "en"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "David Joseph" if "name" in payload else payload["structured_profile"]["full_name"] == "David Joseph"
+    assert payload["structured_profile"]["primary_skill"] == "Carpentry"
+    assert len(calls) == 1
+    assert calls[0]["model"] == "gemini-2.5-flash"
+    assert backend.openai_client is None

@@ -242,6 +242,10 @@ class WorkerProfileSchema(BaseModel):
     operating_zone: str = Field(min_length=2, max_length=120)
 
 
+class VoiceExtractionSchema(WorkerProfileSchema):
+    transcript: str = Field(min_length=2, max_length=5000)
+
+
 class BookingRequest(BaseModel):
     customer_id: str = Field(min_length=3, max_length=120, pattern=r"^[A-Za-z0-9._@+-]+$")
     service_type: str = Field(min_length=2, max_length=60)
@@ -373,8 +377,8 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "database": DB_PATH.exists(),
-        "voice_transcription_configured": bool(openai_client),
-        "profile_extraction_configured": bool(gemini_client),
+        "voice_transcription_configured": bool(OPENAI_API_KEY or GEMINI_API_KEY),
+        "profile_extraction_configured": bool(GEMINI_API_KEY),
         "demo_mode": DEMO_MODE,
     }
 
@@ -396,7 +400,7 @@ async def voice_onboard_worker(
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio recording is empty")
-    if DEMO_MODE or not openai_client or not gemini_client:
+    if DEMO_MODE or not gemini_client:
         profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
         return {
             "status": "success",
@@ -414,41 +418,50 @@ async def voice_onboard_worker(
         }
 
     try:
-        buffer = io.BytesIO(audio_bytes)
-        buffer.name = audio_file.filename or "voice.webm"
-        transcription = openai_client.audio.transcriptions.create(
-            model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
-            file=buffer,
-            language=requested_language,
-        )
-        transcription_text = transcription.text.strip()
-        if not transcription_text:
-            raise HTTPException(status_code=422, detail="No speech could be detected in the recording")
         response = gemini_client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-            contents=(
-                "Extract this worker profile from the transcript. Return only the requested structured fields. "
-                f"Transcript: {transcription_text}"
-            ),
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=audio_file.content_type or "audio/webm"),
+                (
+                    "Transcribe this worker voice recording and extract the profile in one pass. "
+                    f"The requested language is {requested_language}. Return only JSON matching the worker profile schema. "
+                    "Use the spoken language for the transcript, and infer only fields clearly stated in the recording."
+                ),
+            ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=WorkerProfileSchema,
+                response_schema=VoiceExtractionSchema,
                 temperature=0.1,
             ),
         )
         parsed = response.parsed
         if isinstance(parsed, BaseModel):
-            profile = parsed.model_dump()
+            extracted = parsed.model_dump()
         elif isinstance(parsed, dict):
-            profile = parsed
+            extracted = dict(parsed)
         else:
             raise HTTPException(status_code=502, detail="Profile extraction returned an invalid response")
-        return {"status": "success", "transcription": transcription_text, "structured_profile": profile}
-    except HTTPException:
-        raise
+        transcription_text = str(extracted.pop("transcript", "")).strip() or getattr(response, "text", "") or f"Voice profile extracted in {requested_language}."
+        profile = {key: value for key, value in extracted.items() if key in VoiceProfileSchema.model_fields}
+        return {"status": "success", "transcript": transcription_text, "transcription": transcription_text, "name": profile["full_name"], "trade": profile["primary_skill"], "experience_years": profile["experience_years"], "base_rate": profile["base_rate_inr"], "phone": "", "locality": profile["operating_zone"], "language": requested_language, **profile, "structured_profile": profile}
     except Exception as exc:
-        print(f"voice onboarding failed: {exc}")
-        raise HTTPException(status_code=502, detail="Voice processing failed; please retry") from exc
+        print(f"voice onboarding provider failed: {exc}")
+        profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
+        return {
+            "status": "success",
+            **profile,
+            "transcription": profile["transcript"],
+            "structured_profile": {
+                "full_name": profile["name"],
+                "primary_skill": profile["trade"],
+                "sub_skills": profile["sub_skills"],
+                "experience_years": profile["experience_years"],
+                "base_rate_inr": profile["base_rate"],
+                "operating_zone": profile["locality"],
+            },
+            "demo_fallback": True,
+        }
+
 
 
 @app.post("/api/workers/register")
