@@ -104,6 +104,7 @@ export interface VoiceOnboardResponse {
 }
 
 export interface RegisterWorkerRequest extends VoiceProfile {
+  phone: string;
   transcript: string;
   language: string;
 }

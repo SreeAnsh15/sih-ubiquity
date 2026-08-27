@@ -160,6 +160,7 @@ def init_db() -> None:
                 member_id TEXT PRIMARY KEY,
                 user_id TEXT UNIQUE NOT NULL,
                 full_name TEXT NOT NULL,
+                phone TEXT NOT NULL DEFAULT '',
                 primary_skill TEXT NOT NULL,
                 sub_skills_json TEXT NOT NULL,
                 experience_years INTEGER NOT NULL,
@@ -186,6 +187,8 @@ def init_db() -> None:
         if "cluster_id" not in columns:
             db.execute("ALTER TABLE bookings ADD COLUMN cluster_id TEXT NOT NULL DEFAULT 'coimbatore-gandhipuram'")
         registration_columns = {row[1] for row in db.execute("PRAGMA table_info(worker_registrations)").fetchall()}
+        if "phone" not in registration_columns:
+            db.execute("ALTER TABLE worker_registrations ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
         if "verification_status" not in registration_columns:
             db.execute("ALTER TABLE worker_registrations ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'pending'")
         if db.execute("SELECT COUNT(*) FROM workers").fetchone()[0] == 0:
@@ -278,6 +281,7 @@ class RegisterWorkerRequest(BaseModel):
     transcript: str = Field(min_length=2, max_length=5000)
     language: str = Field(min_length=2, max_length=40)
     full_name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(default="", max_length=30)
     primary_skill: str = Field(min_length=2, max_length=60)
     sub_skills: List[str] = Field(default_factory=list, max_length=12)
     experience_years: int = Field(ge=0, le=60)
@@ -459,11 +463,11 @@ def register_worker(req: RegisterWorkerRequest, request: Request) -> dict[str, A
         db.execute(
             """
             INSERT INTO worker_registrations
-            (member_id, user_id, full_name, primary_skill, sub_skills_json, experience_years,
+            (member_id, user_id, full_name, phone, primary_skill, sub_skills_json, experience_years,
              base_rate_inr, operating_zone, transcript, language, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (member_id, user_id, req.full_name, req.primary_skill, json.dumps(req.sub_skills), req.experience_years,
+            (member_id, user_id, req.full_name, req.phone, req.primary_skill, json.dumps(req.sub_skills), req.experience_years,
              req.base_rate_inr, req.operating_zone, req.transcript, req.language, now),
         )
     return {"status": "registered", "member_id": member_id, "registered_at": now}
@@ -512,7 +516,7 @@ def approve_worker(member_id: str, request: Request) -> dict[str, Any]:
         worker_id = member_id.lower()
         if not db.execute("SELECT worker_id FROM workers WHERE worker_id = ?", (worker_id,)).fetchone():
             skills = [registration["primary_skill"], *json.loads(registration["sub_skills_json"])]
-            db.execute("INSERT INTO workers (worker_id, full_name, phone, skills_json, lat, lng, trust_rating, idle_days, is_verified, availability, capacity, created_at) VALUES (?, ?, ?, ?, 11.0168, 76.9558, 0.75, 0, 1, 'online', 1, ?)", (worker_id, registration["full_name"], "PACS member", json.dumps(skills), utc_now().isoformat()))
+            db.execute("INSERT INTO workers (worker_id, full_name, phone, skills_json, lat, lng, trust_rating, idle_days, is_verified, availability, capacity, created_at) VALUES (?, ?, ?, ?, 11.0168, 76.9558, 0.75, 0, 1, 'online', 1, ?)", (worker_id, registration["full_name"], registration["phone"] or "PACS member", json.dumps(skills), utc_now().isoformat()))
     return {"status": "approved", "member_id": member_id, "worker_id": worker_id, "verification_badge": "PACS_VERIFIED"}
 
 
