@@ -36,6 +36,7 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 OTP_TTL_MINUTES = 30
 MAX_OTP_ATTEMPTS = 5
 CLUSTER_ID = "coimbatore-gandhipuram"
+ADMIN_USER_IDS = {item.strip() for item in os.getenv("ADMIN_USER_IDS", "demo-admin,admin").split(",") if item.strip()}
 SUPPORTED_LANGUAGES = {"ta", "hi", "te", "mr", "en"}
 SUPPORTED_SERVICES = {
     "plumbing": "Plumbing",
@@ -130,7 +131,8 @@ def init_db() -> None:
                 operating_zone TEXT NOT NULL,
                 transcript TEXT NOT NULL,
                 language TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                verification_status TEXT NOT NULL DEFAULT 'pending'
             );
             """
         )
@@ -139,6 +141,9 @@ def init_db() -> None:
             db.execute("ALTER TABLE bookings ADD COLUMN otp_attempts INTEGER NOT NULL DEFAULT 0")
         if "cluster_id" not in columns:
             db.execute("ALTER TABLE bookings ADD COLUMN cluster_id TEXT NOT NULL DEFAULT 'coimbatore-gandhipuram'")
+        registration_columns = {row[1] for row in db.execute("PRAGMA table_info(worker_registrations)").fetchall()}
+        if "verification_status" not in registration_columns:
+            db.execute("ALTER TABLE worker_registrations ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'pending'")
         if db.execute("SELECT COUNT(*) FROM workers").fetchone()[0] == 0:
             now = utc_now().isoformat()
             db.executemany(
@@ -398,6 +403,65 @@ def register_worker(req: RegisterWorkerRequest, request: Request) -> dict[str, A
              req.base_rate_inr, req.operating_zone, req.transcript, req.language, now),
         )
     return {"status": "registered", "member_id": member_id, "registered_at": now}
+
+
+def require_admin(request: Request) -> str:
+    actor = request.headers.get("X-User-Id", "").strip()
+    if actor not in ADMIN_USER_IDS:
+        raise HTTPException(status_code=403, detail="PACS administrator access is required")
+    if not DEMO_MODE:
+        require_actor(request, actor)
+    return actor
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        members = int(db.execute("SELECT COUNT(*) FROM worker_registrations").fetchone()[0])
+        pending = int(db.execute("SELECT COUNT(*) FROM worker_registrations WHERE verification_status = 'pending'").fetchone()[0])
+        gigs = int(db.execute("SELECT COUNT(*) FROM bookings WHERE status = 'confirmed' AND cluster_id = ?", (CLUSTER_ID,)).fetchone()[0])
+        funds = db.execute("SELECT COALESCE(SUM(pacs_maintenance),0), COALESCE(SUM(mutual_aid_fund),0) FROM settlements").fetchone()
+        verified = int(db.execute("SELECT COUNT(*) FROM workers WHERE is_verified = 1").fetchone()[0])
+    return {"status": "success", "cluster_id": CLUSTER_ID, "registered_members": members, "verified_workers": verified, "pending_verifications": pending, "active_cluster_gigs": gigs, "pacs_maintenance_pool_inr": round(float(funds[0]), 2), "mutual_aid_reserve_fund_inr": round(float(funds[1]), 2), "fund_split": {"pacs_maintenance_pct": 1.5, "mutual_aid_pct": 0.5}}
+
+
+@app.get("/api/admin/verification-queue")
+def verification_queue(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        rows = db.execute("SELECT * FROM worker_registrations WHERE verification_status = 'pending' ORDER BY created_at DESC").fetchall()
+    items = [{"member_id": row["member_id"], "user_id": row["user_id"], "full_name": row["full_name"], "primary_skill": row["primary_skill"], "sub_skills": json.loads(row["sub_skills_json"]), "experience_years": row["experience_years"], "base_rate_inr": row["base_rate_inr"], "operating_zone": row["operating_zone"], "language": row["language"], "transcript": row["transcript"], "verification_status": row["verification_status"], "created_at": row["created_at"]} for row in rows]
+    return {"status": "success", "items": items, "count": len(items)}
+
+
+@app.post("/api/admin/verification-queue/{member_id}/approve")
+def approve_worker(member_id: str, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        registration = db.execute("SELECT * FROM worker_registrations WHERE member_id = ?", (member_id,)).fetchone()
+        if not registration:
+            raise HTTPException(status_code=404, detail="Worker registration not found")
+        if registration["verification_status"] == "approved":
+            raise HTTPException(status_code=409, detail="Worker registration is already approved")
+        db.execute("UPDATE worker_registrations SET verification_status = 'approved' WHERE member_id = ?", (member_id,))
+        worker_id = member_id.lower()
+        if not db.execute("SELECT worker_id FROM workers WHERE worker_id = ?", (worker_id,)).fetchone():
+            skills = [registration["primary_skill"], *json.loads(registration["sub_skills_json"])]
+            db.execute("INSERT INTO workers (worker_id, full_name, phone, skills_json, lat, lng, trust_rating, idle_days, is_verified, availability, capacity, created_at) VALUES (?, ?, ?, ?, 11.0168, 76.9558, 0.75, 0, 1, 'online', 1, ?)", (worker_id, registration["full_name"], "PACS member", json.dumps(skills), utc_now().isoformat()))
+    return {"status": "approved", "member_id": member_id, "worker_id": worker_id, "verification_badge": "PACS_VERIFIED"}
+
+
+@app.get("/api/admin/demand-forecast")
+def demand_forecast(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    month = utc_now().month
+    season = "Monsoon" if month in {6, 7, 8, 9} else "Festive and Northeast Monsoon" if month in {10, 11, 12, 1} else "Summer"
+    drivers = ["Monsoon rainfall", "Drainage maintenance", "Leakage response demand"] if season == "Monsoon" else ["Festival preparation", "Seasonal household repairs"]
+    multipliers = {"Plumbing": 1.34 if season == "Monsoon" else 1.08, "Electrical": 1.28 if season == "Summer" else 1.16, "House Cleaning": 1.18 if season.startswith("Festive") else 1.04, "Carpentry": 1.12 if season.startswith("Festive") else 1.03, "Masonry": 1.10 if season == "Monsoon" else 1.02}
+    wards = ["Gandhipuram", "RS Puram", "Saibaba Colony", "Peelamedu"]
+    forecast = [{"service_type": service, "ward": ward, "historical_30d_jobs": 0, "predicted_next_30d_jobs": max(1, round(3 * multiplier)), "surge_percentage": round((multiplier - 1) * 100), "signal": "high" if multiplier >= 1.25 else "watch" if multiplier >= 1.1 else "steady", "driver": drivers[0]} for service, multiplier in multipliers.items() for ward in wards]
+    return {"status": "success", "season": season, "generated_at": utc_now().isoformat(), "seasonal_drivers": drivers, "forecast": forecast}
 
 
 @app.post("/api/bookings/match-and-price")
