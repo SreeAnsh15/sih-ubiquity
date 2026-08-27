@@ -335,6 +335,7 @@ def test_voice_onboarding_language_specific_fallbacks(tmp_path, monkeypatch):
     for language, expected in {
         "hi": {"name": "Rajesh Sharma", "trade": "Electrical", "experience_years": 5, "base_rate": 300.0, "phone": "+91 98765 43220"},
         "en": {"name": "David Joseph", "trade": "Carpentry", "experience_years": 8, "base_rate": 350.0, "phone": "+91 98765 43221"},
+        "te": {"name": "Suresh Rao", "trade": "Plumbing", "experience_years": 6, "base_rate": 275.0, "phone": "+91 98765 43222"},
     }.items():
         response = client.post(
             "/api/workers/voice-onboard",

@@ -71,9 +71,10 @@ export const api = {
   settleBooking: (body: { booking_id: string; worker_id: string; cluster_id: string; gross_amount: number; otp_code: string }) => jsonRequest<SettlementResponse>("/api/bookings/verify-settle", body),
   voiceOnboard: async (audio: Blob, language: string, sample = false) => {
     const form = new FormData();
-    form.append("audio_file", audio, sample ? "sample-voice.webm" : "voice.webm");
+    form.append("audio", audio, sample ? "sample-voice.webm" : "voice.webm");
     form.append("preferred_language", language);
     form.append("language_hint", language);
+    form.append("language", language);
     return request<VoiceOnboardResponse>("/api/workers/voice-onboard", { method: "POST", body: form });
   },
   registerWorker: (body: RegisterWorkerRequest) => jsonRequest<RegisterWorkerResponse>("/api/workers/register", body),

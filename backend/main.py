@@ -91,6 +91,17 @@ DEMO_VOICE_PROFILES = {
         "language": "en",
         "sub_skills": ["Furniture repair", "Woodwork"],
     },
+    "te": {
+        "transcript": "నా పేరు సురేష్ రావు, గాంధీపురంలో 6 సంవత్సరాలుగా ప్లంబింగ్ పని చేస్తున్నాను, ప్రాథమిక ధర 275 రూపాయలు.",
+        "name": "Suresh Rao",
+        "trade": "Plumbing",
+        "experience_years": 6,
+        "base_rate": 275.0,
+        "phone": "+91 98765 43222",
+        "locality": "Gandhipuram",
+        "language": "te",
+        "sub_skills": ["Pipe fitting", "Sanitation"],
+    },
 }
 SEED_WORKERS = [
     ("w-101", "Murugan S.", "+91 9876543210", ["Plumbing", "Pipe Fitting"], 11.0231, 76.9612, 0.88, 6),
@@ -385,17 +396,21 @@ def health() -> dict[str, Any]:
 
 @app.post("/api/workers/voice-onboard")
 async def voice_onboard_worker(
-    audio_file: UploadFile = File(...),
+    audio: UploadFile | None = File(None),
+    audio_file: UploadFile | None = File(None),
     preferred_language: str = Form("ta"),
     language_hint: str | None = Form(None),
     language: str | None = Form(None),
 ) -> dict[str, Any]:
     requested_language = (language_hint or language or preferred_language or "ta").strip().lower()
+    audio_upload = audio or audio_file
     if requested_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Unsupported language")
-    if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
+    if not audio_upload:
+        raise HTTPException(status_code=400, detail="Upload an audio recording")
+    if not audio_upload.content_type or not audio_upload.content_type.startswith("audio/"):
         raise HTTPException(status_code=415, detail="Upload an audio recording")
-    audio_bytes = await audio_file.read(MAX_AUDIO_BYTES + 1)
+    audio_bytes = await audio_upload.read(MAX_AUDIO_BYTES + 1)
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
     if not audio_bytes:
@@ -421,7 +436,7 @@ async def voice_onboard_worker(
         response = gemini_client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=audio_file.content_type or "audio/webm"),
+                types.Part.from_bytes(data=audio_bytes, mime_type=audio_upload.content_type or "audio/webm"),
                 (
                     "Transcribe this worker voice recording and extract the profile in one pass. "
                     f"The requested language is {requested_language}. Return only JSON matching the worker profile schema. "
