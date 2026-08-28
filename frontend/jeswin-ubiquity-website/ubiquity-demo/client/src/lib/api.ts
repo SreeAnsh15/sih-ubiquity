@@ -83,6 +83,10 @@ function jsonRequest<T>(path: string, body: unknown, method = "POST") {
 
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
+  getWorkers: (params: { service_type?: BookingRequest["service_type"]; customer_lat?: number; customer_lng?: number; emergency?: boolean } = {}) => {
+    const query = new URLSearchParams({ service_type: params.service_type || "Plumbing", customer_lat: String(params.customer_lat ?? 11.0168), customer_lng: String(params.customer_lng ?? 76.9558), emergency: String(params.emergency ?? false) });
+    return request<MatchResponse>(`/api/workers?${query.toString()}`);
+  },
   matchWorkers: (body: BookingRequest) => jsonRequest<MatchResponse>("/api/bookings/match-and-price", body),
   createBooking: (body: CreateBookingRequest) => jsonRequest<BookingResponse>("/api/bookings", body),
   cancelBooking: (bookingId: string) => request<CancelResponse>(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, { method: "DELETE" }),

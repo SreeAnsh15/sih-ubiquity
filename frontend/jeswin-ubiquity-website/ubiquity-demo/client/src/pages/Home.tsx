@@ -87,11 +87,25 @@ export function HomePage() {
   const search = async (requestedService = service, emergencyOverride = emergency) => {
     setLoading(true);
     try {
-      const result = await api.matchWorkers({ customer_id: getIdentity().userId, service_type: requestedService, customer_lat: CENTER[0], customer_lng: CENTER[1], emergency: emergencyOverride });
+      const result = await api.getWorkers({ service_type: requestedService, customer_lat: CENTER[0], customer_lng: CENTER[1], emergency: emergencyOverride });
       setData(result);
-      toast.success(`${result.all_ranked_candidates.length} verified workers found`);
+      toast.success(`${result.all_ranked_candidates.length} verified workers found on the live roster`);
     } catch (error) { fail(error); } finally { setLoading(false); }
   };
+  const requestDispatch = async () => {
+    setLoading(true);
+    try {
+      const result = await api.matchWorkers({ customer_id: getIdentity().userId, service_type: service, customer_lat: CENTER[0], customer_lng: CENTER[1], emergency: true });
+      setData(result);
+      if (result.selected_best_match) {
+        setSelected(result.selected_best_match);
+        toast.success("Nearest PACS worker assigned", { description: `${result.selected_best_match.full_name} · ${result.selected_best_match.distance_km} km away` });
+      } else {
+        toast.warning("No idle PACS worker is available within 2 km");
+      }
+    } catch (error) { fail(error); } finally { setLoading(false); }
+  };
+  useEffect(() => { if (!localStorage.getItem("ubiquity.user-id")) setIdentity("demo-customer"); }, []);
   useEffect(() => { if (customer) void search(); }, [customer]);
   const continueToServices = (profile: CustomerProfile) => { setCustomer(profile); sessionStorage.setItem("ubiquity.customer", JSON.stringify(profile)); setIdentity(`customer-${profile.phone.replace(/\D/g, "")}`); };
   return <PageShell activeBooking={lastBooking} customer={customer}>
@@ -104,7 +118,7 @@ export function HomePage() {
         {FUTURE_SERVICES.map((item) => <button key={item.label} className="category-card future" onClick={() => toast.info("Coming to your ward in Phase 2 PACS expansion")}><span>{item.icon}</span><b>{trade(item.label)}</b><small>{t.future}</small></button>)}
       </div>
     </section>
-    <section className="service-toolbar"><div><label htmlFor="service">{t.findWorker}</label><select id="service" value={service} onChange={(event) => { const next = event.target.value as ServiceType; setService(next); void search(next, emergency); }}>{ACTIVE_SERVICES.map((item) => <option key={item.type} value={item.type}>{trade(item.type)}</option>)}</select></div><button className="primary-button" onClick={() => void search()} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : ""} /> {loading ? "Searching…" : t.search}</button></section>
+    <section className="service-toolbar"><div><label htmlFor="service">{t.findWorker}</label><select id="service" value={service} onChange={(event) => { const next = event.target.value as ServiceType; setService(next); void search(next, emergency); }}>{ACTIVE_SERVICES.map((item) => <option key={item.type} value={item.type}>{trade(item.type)}</option>)}</select></div><div className="toolbar-actions"><button className="primary-button" onClick={() => void search()} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : ""} /> {loading ? "Searching…" : "Search live roster"}</button><button className="secondary-button" onClick={() => void requestDispatch()} disabled={loading}><Zap size={15} /> Request Automated Cooperative Dispatch</button></div></section>
     <div className="customer-grid"><section><div className="section-title"><div><p className="eyebrow">Live results</p><h2>{data ? `${data.all_ranked_candidates.length} ${t.matches}` : t.liveResults}</h2></div><span className="cluster-badge"><MapPin size={13} /> {emergency ? "2 km priority" : "5 km cluster"}</span></div>{!data ? <div className="empty-card"><Search size={25} /><b>Search the live roster</b><p>Results from the FastAPI matching service will appear here.</p></div> : data.all_ranked_candidates.length ? <div className="worker-list">{data.all_ranked_candidates.map((worker) => <WorkerCard key={worker.worker_id} worker={worker} onBook={() => setSelected(worker)} />)}</div> : <div className="empty-card"><CircleAlert size={25} /><b>No verified worker available</b><p>Try another service or search again in a moment.</p></div>}</section><aside><WorkerMap matches={data?.all_ranked_candidates || []} emergency={emergency} /><div className="next-service-card"><div className="next-service-title"><CalendarCheck2 size={17} /><span>Next service</span><small>{lastBooking ? "CONFIRMED" : "IDLE"}</small></div>{lastBooking ? <><b>Assigned cooperative visit</b><p>Booking {lastBooking.booking_id} · OTP ready for completion</p></> : <><b>No active booking</b><p>Your next service will appear here after confirmation.</p></>}</div><div className="transparency-card"><ShieldCheck size={18} /><div><b>Transparent cooperative quote</b><p>Every match shows the fair rate, aggregator comparison, distance, and verification status before you book.</p></div></div></aside></div>
     {selected && <BookingModal worker={selected} onClose={() => setSelected(null)} onBooked={setLastBooking} />}
     </>}
