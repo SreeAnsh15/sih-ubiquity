@@ -27,12 +27,37 @@ export interface WorkerMatch {
   customer_savings_inr: number;
   trust_rating: number;
   idle_days: number;
+  days_idle: number;
+  fairness_boost_factor: number;
   lat: number;
   lng: number;
   verified: boolean;
   availability: string;
   phone: string;
   emergency_eligible: boolean;
+}
+
+export interface AdminWorker {
+  worker_id: string;
+  full_name: string;
+  phone: string;
+  trade: string;
+  skills: string[];
+  trust_rating: number;
+  idle_days: number;
+  days_idle: number;
+  fairness_boost_factor: number;
+  base_rate_inr: number;
+  status: "Active" | "Pending" | "Offline";
+  verified: boolean;
+  availability: string;
+}
+
+export interface AdminWorkersResponse {
+  status: string;
+  workers: AdminWorker[];
+  count: number;
+  trade: string;
 }
 
 export interface MatchResponse {

@@ -435,6 +435,8 @@ def worker_payload(row: sqlite3.Row, distance_km: float, service: str, score: fl
         "customer_savings_inr": round(commercial_price - fair_price, 2),
         "trust_rating": row["trust_rating"],
         "idle_days": row["idle_days"],
+        "days_idle": row["idle_days"],
+        "fairness_boost_factor": round(min(1.0, row["idle_days"] * 0.25), 3),
         "lat": row["lat"],
         "lng": row["lng"],
         "verified": bool(row["is_verified"]),
@@ -698,7 +700,10 @@ def list_workers(
             distance = haversine_km(customer_lat, customer_lng, worker["lat"], worker["lng"])
             if distance > (2 if emergency else 5):
                 continue
-            score = 0.45 * max(0.0, 1.0 - distance / 5.0) + 0.35 * worker["trust_rating"] + 0.20 * min(1.0, worker["idle_days"] / 10.0)
+            proximity_score = max(0.0, 1.0 - distance / 5.0)
+            trust_score = worker["trust_rating"]
+            idle_days_boost = min(1.0, worker["idle_days"] * 0.25)
+            score = 0.35 * proximity_score + 0.30 * trust_score + 0.35 * idle_days_boost
             candidates.append(worker_payload(worker, distance, worker_service, score))
     candidates.sort(key=lambda item: (-item["fair_match_score"], item["distance_km"], item["worker_id"]))
     return {
@@ -709,9 +714,53 @@ def list_workers(
         "workers": candidates,
         "all_ranked_candidates": candidates,
         "count": len(candidates),
-        "breakdown": {"proximity": 45, "trust": 35, "idle": 20},
+        "breakdown": {"proximity": 35, "trust": 30, "idle": 35},
         "emergency_dispatch": {"requested": emergency, "radius_km": 2 if emergency else 5, "priority": "high" if emergency else "standard", "requires_idle_worker": emergency},
     }
+
+
+@app.get("/api/admin/workers")
+def admin_workers(
+    request: Request,
+    trade: str | None = None,
+) -> dict[str, Any]:
+    require_admin(request)
+    normalized_trade = trade.strip().lower() if trade else None
+    workers: list[dict[str, Any]] = []
+    with db_connect() as db:
+        rows = db.execute("SELECT * FROM workers ORDER BY full_name ASC").fetchall()
+        for row in rows:
+            skills = json.loads(row["skills_json"])
+            primary_skill = next((SUPPORTED_SERVICES.get(str(skill).lower(), str(skill)) for skill in skills), "General")
+            if normalized_trade and normalized_trade not in {str(skill).lower() for skill in skills} and normalized_trade != primary_skill.lower():
+                continue
+            workers.append({
+                "worker_id": row["worker_id"],
+                "full_name": row["full_name"],
+                "phone": row["phone"],
+                "trade": primary_skill,
+                "skills": skills,
+                "trust_rating": row["trust_rating"],
+                "idle_days": row["idle_days"],
+                "days_idle": row["idle_days"],
+                "fairness_boost_factor": round(min(1.0, row["idle_days"] * 0.25), 3),
+                "base_rate_inr": row["base_rate_inr"],
+                "status": "Active" if row["is_verified"] and row["availability"] == "online" else "Pending" if not row["is_verified"] else "Offline",
+                "verified": bool(row["is_verified"]),
+                "availability": row["availability"],
+            })
+    return {"status": "success", "workers": workers, "count": len(workers), "trade": trade or "All"}
+
+
+@app.delete("/api/admin/workers/{worker_id}")
+def remove_admin_worker(worker_id: str, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        worker = db.execute("SELECT worker_id, full_name FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker not found")
+        db.execute("UPDATE workers SET availability = 'offline', is_verified = 0 WHERE worker_id = ?", (worker_id,))
+    return {"status": "removed", "worker_id": worker_id, "full_name": worker["full_name"]}
 
 
 @app.get("/api/matching/roster")
@@ -744,7 +793,8 @@ def match_worker_and_price(req: BookingRequest, request: Request) -> dict[str, A
                 continue
             proximity_score = max(0.0, 1.0 - distance / 5.0)
             idle_score = min(1.0, worker["idle_days"] / 10.0)
-            score = 0.45 * proximity_score + 0.35 * worker["trust_rating"] + 0.20 * idle_score
+            idle_days_boost = min(1.0, worker["idle_days"] * 0.25)
+            score = 0.35 * proximity_score + 0.30 * worker["trust_rating"] + 0.35 * idle_days_boost
             candidates.append(worker_payload(worker, distance, req.service_type, score))
 
     candidates.sort(key=lambda item: (-item["fair_match_score"], item["distance_km"], item["worker_id"]))
@@ -754,7 +804,7 @@ def match_worker_and_price(req: BookingRequest, request: Request) -> dict[str, A
         "service_requested": req.service_type,
         "selected_best_match": candidates[0] if candidates else None,
         "all_ranked_candidates": candidates,
-        "breakdown": {"proximity": 45, "trust": 35, "idle": 20},
+        "breakdown": {"proximity": 35, "trust": 30, "idle": 35},
         "emergency_dispatch": {"requested": req.emergency, "radius_km": 2 if req.emergency else 5, "priority": "high" if req.emergency else "standard", "requires_idle_worker": req.emergency},
     }
 

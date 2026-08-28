@@ -15,6 +15,7 @@ import type {
   VoiceOnboardResponse,
   WelfareResponse,
   WelfareClaim,
+  AdminWorkersResponse,
 } from "@shared/contracts";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -103,6 +104,8 @@ export const api = {
   registerWorker: (body: RegisterWorkerRequest) => jsonRequest<RegisterWorkerResponse>("/api/workers/register", body),
   adminDashboard: () => request<AdminDashboard>("/api/admin/dashboard"),
   verificationQueue: () => request<VerificationQueueResponse>("/api/admin/verification-queue"),
+  adminWorkers: (trade?: string) => request<AdminWorkersResponse>(`/api/admin/workers${trade && trade !== "All" ? `?trade=${encodeURIComponent(trade)}` : ""}`),
+  removeAdminWorker: (workerId: string) => request<{ status: string; worker_id: string; full_name: string }>(`/api/admin/workers/${encodeURIComponent(workerId)}`, { method: "DELETE" }),
   approveWorker: (memberId: string) => jsonRequest<{ status: string; member_id: string; worker_id: string; verification_badge: string }>(`/api/admin/verification-queue/${encodeURIComponent(memberId)}/approve`, {}),
   demandForecast: () => request<DemandForecastResponse>("/api/admin/demand-forecast"),
   mutualAidClaims: () => request<{ status: string; claims: WelfareClaim[]; count: number }>("/api/admin/mutual-aid-claims"),
