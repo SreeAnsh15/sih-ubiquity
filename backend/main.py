@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Union
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -293,15 +293,46 @@ class WelfareClaimRequest(BaseModel):
 
 class RegisterWorkerRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    transcript: str = Field(min_length=2, max_length=5000)
-    language: str = Field(min_length=2, max_length=40)
-    full_name: str = Field(min_length=2, max_length=120)
-    phone: str = Field(default="", max_length=30)
-    primary_skill: str = Field(min_length=2, max_length=60)
-    sub_skills: List[str] = Field(default_factory=list, max_length=12)
-    experience_years: int = Field(ge=0, le=60)
-    base_rate_inr: float = Field(gt=0, le=100000)
-    operating_zone: str = Field(min_length=2, max_length=120)
+    transcript: str = Field(default="Manual profile submitted by cooperative member.", max_length=5000)
+    language: str = Field(default="en", max_length=40)
+    full_name: str = "Cooperative Worker"
+    phone: str = ""
+    primary_skill: str = "General"
+    sub_skills: List[str] = Field(default_factory=list)
+    experience_years: Union[int, float, str] = 1
+    base_rate_inr: Union[int, float, str] = 250
+    operating_zone: str = "Gandhipuram"
+
+    @field_validator("experience_years", mode="before")
+    @classmethod
+    def coerce_experience_years(cls, value: Any) -> int:
+        try:
+            parsed = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            return 1
+        return max(0, min(60, parsed))
+
+    @field_validator("base_rate_inr", mode="before")
+    @classmethod
+    def coerce_base_rate(cls, value: Any) -> float:
+        try:
+            parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            return 250.0
+        return max(1.0, min(100000.0, parsed))
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> str:
+        digits = "".join(character for character in str(value or "") if character.isdigit())
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        return digits[-10:] if len(digits) >= 10 else digits
+
+    @field_validator("primary_skill", mode="before")
+    @classmethod
+    def normalize_trade(cls, value: Any) -> str:
+        return str(value or "General").strip() or "General"
 
 
 def require_actor(request: Request, user_id: str) -> str:
@@ -527,7 +558,7 @@ def verification_queue(request: Request) -> dict[str, Any]:
     require_admin(request)
     with db_connect() as db:
         rows = db.execute("SELECT * FROM worker_registrations WHERE verification_status = 'pending' ORDER BY created_at DESC").fetchall()
-    items = [{"member_id": row["member_id"], "user_id": row["user_id"], "full_name": row["full_name"], "primary_skill": row["primary_skill"], "sub_skills": json.loads(row["sub_skills_json"]), "experience_years": row["experience_years"], "base_rate_inr": row["base_rate_inr"], "operating_zone": row["operating_zone"], "language": row["language"], "transcript": row["transcript"], "verification_status": row["verification_status"], "created_at": row["created_at"]} for row in rows]
+    items = [{"member_id": row["member_id"], "user_id": row["user_id"], "full_name": row["full_name"], "phone": row["phone"], "primary_skill": row["primary_skill"], "sub_skills": json.loads(row["sub_skills_json"]), "experience_years": row["experience_years"], "base_rate_inr": row["base_rate_inr"], "operating_zone": row["operating_zone"], "language": row["language"], "transcript": row["transcript"], "verification_status": row["verification_status"], "created_at": row["created_at"]} for row in rows]
     return {"status": "success", "items": items, "count": len(items)}
 
 

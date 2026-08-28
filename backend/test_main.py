@@ -432,3 +432,34 @@ def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
     assert len(calls) == 1
     assert calls[0]["model"] == "gemini-2.5-flash"
     assert backend.openai_client is None
+
+
+def test_custom_worker_registration_coerces_edge_case_values(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    response = client.post(
+        "/api/workers/register",
+        headers={"X-User-Id": "custom-worker-edge"},
+        json={
+            "full_name": "Custom Solar Specialist",
+            "phone": "+91 98840-51502",
+            "primary_skill": "Solar Panel Diagnostics",
+            "sub_skills": ["Rooftop systems"],
+            "experience_years": "not provided",
+            "base_rate_inr": "₹2,500",
+            "operating_zone": "Gandhipuram Ward 12",
+            "transcript": "Manual custom profile",
+            "language": "en",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "registered"
+    queue = client.get("/api/admin/verification-queue", headers={"X-User-Id": "demo-admin"})
+    assert queue.status_code == 200
+    saved = next(item for item in queue.json()["items"] if item["member_id"] == payload["member_id"])
+    assert saved["full_name"] == "Custom Solar Specialist"
+    assert saved["phone"] == "9884051502"
+    assert saved["primary_skill"] == "Solar Panel Diagnostics"
+    assert saved["experience_years"] == 1
+    assert saved["base_rate_inr"] == 250.0

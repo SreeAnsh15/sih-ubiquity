@@ -35,6 +35,24 @@ export function setIdentity(userId: string, signature?: string) {
   else localStorage.removeItem(USER_SIGNATURE_KEY);
 }
 
+export function formatApiError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  const candidate = error as { response?: { data?: { detail?: unknown } }; detail?: unknown } | null;
+  const detail = candidate?.response?.data?.detail ?? candidate?.detail ?? error;
+  const formatDetail = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return value.map((item) => formatDetail(item)).filter(Boolean).join("; ");
+    if (value && typeof value === "object") {
+      const object = value as Record<string, unknown>;
+      if (typeof object.msg === "string") return object.msg;
+      if (typeof object.message === "string") return object.message;
+      return Object.entries(object).map(([key, item]) => `${key}: ${formatDetail(item)}`).join(", ");
+    }
+    return value == null ? "The backend is unavailable. Please try again." : String(value);
+  };
+  return formatDetail(detail);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const identity = getIdentity();
   const headers = new Headers(init.headers);
@@ -49,7 +67,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
-    const detail = typeof payload === "object" && payload && "detail" in payload ? String(payload.detail) : "The service returned an unexpected error.";
+    const detail = typeof payload === "object" && payload && "detail" in payload ? formatApiError({ detail: payload.detail }) : "The service returned an unexpected error.";
     throw new Error(`${detail} (${response.status})`);
   }
   return payload as T;
