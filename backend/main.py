@@ -276,10 +276,16 @@ class WorkerProfileSchema(BaseModel):
     operating_zone: str = Field(min_length=2, max_length=120)
 
 
-class VoiceExtractionSchema(WorkerProfileSchema):
-    transcript: str = Field(min_length=2, max_length=5000)
-    experience_years: int = Field(default=3, ge=0, le=60)
-    base_rate_inr: float = Field(default=350.0, gt=0, le=100000)
+class VoiceExtractionSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(default="", description="Full name in English script")
+    trade: str = Field(default="", description="Normalized English trade category")
+    experience_years: int = Field(default=3, description="Years of experience")
+    base_rate: float = Field(default=250.0, description="Daily or hourly base rate in INR")
+    language_detected: str = Field(default="English", description="Detected spoken language")
+    operating_zone: str = Field(default="Gandhipuram", description="Locality or ward")
+    sub_skills: list[str] = Field(default_factory=list, description="Specific skills mentioned")
+    transcript: str = Field(default="", description="Verbatim transcript in original script or English")
 
 
 class BookingRequest(BaseModel):
@@ -479,7 +485,9 @@ async def voice_onboard_worker(
     language_hint: str | None = Form(None),
     language: str | None = Form(None),
 ) -> dict[str, Any]:
-    requested_language = (language_hint or language or preferred_language or "ta").strip().lower()
+    language_aliases = {"english": "en", "tamil": "ta", "hindi": "hi", "telugu": "te"}
+    requested_language = (language_hint or language or preferred_language or "en").strip().lower()
+    requested_language = language_aliases.get(requested_language, requested_language)
     audio_upload = audio or audio_file
     if requested_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Unsupported language")
@@ -522,6 +530,7 @@ async def voice_onboard_worker(
             ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
+                response_schema=VoiceExtractionSchema,
                 temperature=0.1,
             ),
         )
@@ -554,7 +563,7 @@ async def voice_onboard_worker(
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"[VOICE ONBOARD ERROR] {type(exc).__name__}: {str(exc)}")
+        print(f"[VOICE ONBOARD ERROR] {exc}")
         raise HTTPException(status_code=502, detail="Gemini voice extraction failed. Please try recording again.") from exc
 
 

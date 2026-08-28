@@ -513,3 +513,35 @@ def test_demo_master_otps_complete_booking(tmp_path, monkeypatch):
         assert completed.status_code == 200
         assert completed.json()["status"] == "completed"
         assert completed.json()["payout_released"] is True
+
+
+def test_gemini_voice_path_accepts_raw_json_and_generic_browser_mime(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+
+    class FakeResponse:
+        parsed = None
+        text = '''```json
+{"name":"Vikram Malhotra","trade":"Electrical","experience_years":6,"base_rate":400,"language_detected":"English","transcript":"My name is Vikram Malhotra and I am an electrician in Gandhipuram.","sub_skills":["Wiring"],"operating_zone":"Gandhipuram"}
+```'''
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return FakeResponse()
+
+    class FakeGemini:
+        models = FakeModels()
+
+    backend.GEMINI_API_KEY = "gemini-test-key"
+    backend.gemini_client = FakeGemini()
+    response = TestClient(backend.app).post(
+        "/api/workers/voice-onboard",
+        files={"audio": ("spoken_test.wav", b"a" * 256, "application/octet-stream")},
+        data={"language": "English"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Vikram Malhotra"
+    assert payload["trade"] == "Electrical"
+    assert payload["demo_fallback"] is False
+    schema = backend.VoiceExtractionSchema.model_json_schema()
+    assert "exclusiveMinimum" not in str(schema)
