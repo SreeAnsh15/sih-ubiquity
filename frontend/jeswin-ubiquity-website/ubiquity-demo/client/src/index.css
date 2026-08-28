@@ -323,3 +323,20 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .demo-helper b { color:#7c2d12; letter-spacing:.14em; }
 .demo-helper .text-button { padding:0; }
 @media (max-width:700px) { .worker-menu { right:auto; left:0; } .toolbar-actions { justify-content:flex-start; } .toolbar-actions button { width:100%; justify-content:center; } .demo-helper { align-items:flex-start; flex-direction:column; } }
+
+/* Voice-first onboarding recorder */
+.voice-language-hint { text-align: center; margin: 0 0 14px; }
+.voice-recorder-card { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 16px 18px; background: linear-gradient(180deg, #fff 0%, #fff7ed 100%); border: 1px solid #fed7aa; border-radius: 18px; }
+.voice-record-button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 220px; min-height: 166px; padding: 18px; color: #9a3412; background: transparent; border: 0; cursor: pointer; }
+.voice-record-button::before, .voice-record-button::after { content: ""; position: absolute; width: 126px; height: 126px; border: 1px solid #fdba74; border-radius: 999px; animation: voice-record-pulse 2.2s ease-out infinite; }
+.voice-record-button::after { animation-delay: 1.1s; }
+.voice-record-button:disabled { opacity: .55; cursor: not-allowed; }
+.voice-mic-orb { position: relative; z-index: 1; display: grid; place-items: center; width: 92px; height: 92px; color: #fff; background: #ea580c; border: 7px solid #ffedd5; border-radius: 999px; box-shadow: 0 9px 22px #c2410c38; }
+.voice-record-button b { position: relative; z-index: 1; font-size: 12px; line-height: 1.35; text-align: center; }
+.voice-recording-active { display: flex; width: min(100%, 480px); flex-direction: column; align-items: center; gap: 14px; }
+.voice-recording-active .recording-visual { width: 100%; justify-content: center; flex-wrap: wrap; margin-top: 0; }
+.stop-record-button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; color: #fff; background: #dc2626; border: 0; border-radius: 9px; box-shadow: 0 5px 12px #b91c1c2b; font-size: 12px; font-weight: 700; cursor: pointer; }
+.stop-record-button:hover { background: #b91c1c; }
+.sample-voice-button { border-top: 1px solid #fed7aa; padding-top: 12px; }
+@keyframes voice-record-pulse { 0% { transform: scale(.78); opacity: .7; } 70%, 100% { transform: scale(1.35); opacity: 0; } }
+@media (max-width: 620px) { .voice-record-button { min-width: 190px; min-height: 150px; } .voice-mic-orb { width: 82px; height: 82px; } }
