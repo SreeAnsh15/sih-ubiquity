@@ -449,6 +449,24 @@ def health() -> dict[str, Any]:
     }
 
 
+def demo_voice_response(requested_language: str) -> dict[str, Any]:
+    profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
+    return {
+        "status": "success",
+        **profile,
+        "transcription": profile["transcript"],
+        "structured_profile": {
+            "full_name": profile["name"],
+            "primary_skill": profile["trade"],
+            "sub_skills": profile["sub_skills"],
+            "experience_years": profile["experience_years"],
+            "base_rate_inr": profile["base_rate"],
+            "operating_zone": profile["locality"],
+        },
+        "demo_fallback": True,
+    }
+
+
 @app.post("/api/workers/voice-onboard")
 async def voice_onboard_worker(
     audio: UploadFile | None = File(None),
@@ -462,7 +480,7 @@ async def voice_onboard_worker(
     if requested_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Unsupported language")
     if not audio_upload:
-        raise HTTPException(status_code=400, detail="Upload an audio recording")
+        return demo_voice_response(requested_language)
     if not audio_upload.content_type or not audio_upload.content_type.startswith("audio/"):
         raise HTTPException(status_code=415, detail="Upload an audio recording")
     audio_bytes = await audio_upload.read(MAX_AUDIO_BYTES + 1)
@@ -470,25 +488,10 @@ async def voice_onboard_worker(
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio recording is empty")
-    active_gemini_client = get_gemini_client()
-    if DEMO_MODE or not active_gemini_client:
-        profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
-        return {
-            "status": "success",
-            **profile,
-            "transcription": profile["transcript"],
-            "structured_profile": {
-                "full_name": profile["name"],
-                "primary_skill": profile["trade"],
-                "sub_skills": profile["sub_skills"],
-                "experience_years": profile["experience_years"],
-                "base_rate_inr": profile["base_rate"],
-                "operating_zone": profile["locality"],
-            },
-            "demo_fallback": True,
-        }
-
     try:
+        active_gemini_client = get_gemini_client()
+        if not active_gemini_client:
+            raise RuntimeError("Gemini client is unavailable")
         response = active_gemini_client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=[
@@ -513,25 +516,11 @@ async def voice_onboard_worker(
         else:
             raise HTTPException(status_code=502, detail="Profile extraction returned an invalid response")
         transcription_text = str(extracted.pop("transcript", "")).strip() or getattr(response, "text", "") or f"Voice profile extracted in {requested_language}."
-        profile = {key: value for key, value in extracted.items() if key in VoiceProfileSchema.model_fields}
-        return {"status": "success", "transcript": transcription_text, "transcription": transcription_text, "name": profile["full_name"], "trade": profile["primary_skill"], "experience_years": profile["experience_years"], "base_rate": profile["base_rate_inr"], "phone": "", "locality": profile["operating_zone"], "language": requested_language, **profile, "structured_profile": profile}
+        profile = {key: value for key, value in extracted.items() if key in WorkerProfileSchema.model_fields}
+        return {"status": "success", "transcript": transcription_text, "transcription": transcription_text, "name": profile["full_name"], "trade": profile["primary_skill"], "experience_years": profile["experience_years"], "base_rate": profile["base_rate_inr"], "phone": "", "locality": profile["operating_zone"], "language": requested_language, "demo_fallback": False, **profile, "structured_profile": profile}
     except Exception as exc:
         print(f"voice onboarding provider failed: {exc}")
-        profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
-        return {
-            "status": "success",
-            **profile,
-            "transcription": profile["transcript"],
-            "structured_profile": {
-                "full_name": profile["name"],
-                "primary_skill": profile["trade"],
-                "sub_skills": profile["sub_skills"],
-                "experience_years": profile["experience_years"],
-                "base_rate_inr": profile["base_rate"],
-                "operating_zone": profile["locality"],
-            },
-            "demo_fallback": True,
-        }
+        return demo_voice_response(requested_language)
 
 
 

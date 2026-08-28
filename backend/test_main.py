@@ -311,7 +311,6 @@ def test_voice_onboarding_returns_deterministic_demo_profile(tmp_path, monkeypat
     client = TestClient(backend.app)
     response = client.post(
         "/api/workers/voice-onboard",
-        files={"audio_file": ("voice.webm", b"demo-audio", "audio/webm")},
         data={"preferred_language": "ta"},
     )
     assert response.status_code == 200
@@ -339,7 +338,6 @@ def test_voice_onboarding_language_specific_fallbacks(tmp_path, monkeypatch):
     }.items():
         response = client.post(
             "/api/workers/voice-onboard",
-            files={"audio_file": ("voice.webm", b"demo-audio", "audio/webm")},
             data={"language_hint": language},
         )
         assert response.status_code == 200
@@ -414,7 +412,7 @@ def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
     class FakeGemini:
         models = FakeModels()
 
-    backend.DEMO_MODE = False
+    backend.DEMO_MODE = True
     backend.OPENAI_API_KEY = None
     backend.openai_client = None
     backend.GEMINI_API_KEY = "gemini-test-key"
@@ -429,6 +427,7 @@ def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
     payload = response.json()
     assert payload["name"] == "David Joseph" if "name" in payload else payload["structured_profile"]["full_name"] == "David Joseph"
     assert payload["structured_profile"]["primary_skill"] == "Carpentry"
+    assert payload["demo_fallback"] is False
     assert len(calls) == 1
     assert calls[0]["model"] == "gemini-2.5-flash"
     assert backend.openai_client is None
