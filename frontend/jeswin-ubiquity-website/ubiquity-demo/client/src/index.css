@@ -291,3 +291,19 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .waveform span { width:3px; height:8px; background:#ef4444; border-radius:99px; animation:voice-wave .75s ease-in-out infinite alternate; }
 @keyframes voice-wave { to { height:22px; opacity:.58; } }
 @media (max-width:700px) { .top-heading-with-home { align-items:flex-start; flex-direction:column; gap:10px; } .account-actions { flex-wrap:wrap; } .customer-onboarding-card { margin-top:30px; padding:24px; } .onboarding-actions { align-items:stretch; flex-direction:column; } }
+
+.recording-visual { transition: background .2s ease, border-color .2s ease, color .2s ease; }
+.recording-visual.voice-active { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
+.recording-visual.voice-quiet { color:#a16207; background:#fffbeb; border-color:#fde68a; }
+.recording-visual .waveform { align-items:center; height:30px; }
+.recording-visual .waveform span { height:4%; min-height:4px; max-height:100%; background:currentColor; animation:voice-meter-pulse .4s ease-in-out infinite alternate; transition:height .12s ease, opacity .2s ease; }
+.recording-visual.voice-quiet .waveform span { opacity:.38; }
+.recording-visual small { min-width:54px; text-align:right; font-variant-numeric:tabular-nums; }
+@keyframes voice-meter-pulse { from { transform:scaleY(.78); } to { transform:scaleY(1.08); } }
+.recording-warning { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; padding:12px 13px; color:#92400e; background:#fffbeb; border:1px solid #fcd34d; border-radius:9px; font-size:11px; line-height:1.45; }
+.recording-warning > div { display:flex; flex:none; gap:6px; }
+.recording-warning .text-button { color:#b45309; white-space:nowrap; }
+.ai-processing { display:flex; align-items:center; gap:7px; color:#7c3aed; }
+.review-form-highlight { animation:review-form-flash 1.3s ease-out; }
+@keyframes review-form-flash { 0% { background:#ecfdf5; box-shadow:0 0 0 4px #34d39966; } 100% { background:transparent; box-shadow:0 0 0 0 transparent; } }
+@media (max-width:700px) { .recording-warning { align-items:flex-start; flex-direction:column; } .recording-warning > div { width:100%; flex-wrap:wrap; } }
