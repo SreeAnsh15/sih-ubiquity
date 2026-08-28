@@ -422,7 +422,7 @@ def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
     client = TestClient(backend.app)
     response = client.post(
         "/api/workers/voice-onboard",
-        files={"audio_file": ("voice.webm", b"audio-bytes", "audio/webm")},
+        files={"audio_file": ("voice.webm", b"a" * 128, "application/octet-stream")},
         data={"preferred_language": "en"},
     )
     assert response.status_code == 200
@@ -462,7 +462,7 @@ def test_gemini_voice_path_reports_unintelligible_speech(tmp_path, monkeypatch):
     backend.gemini_client = FakeGemini()
     response = TestClient(backend.app).post(
         "/api/workers/voice-onboard",
-        files={"audio": ("silence.webm", b"audio-bytes", "audio/webm")},
+        files={"audio": ("silence.webm", b"a" * 128, "application/octet-stream")},
         data={"language": "en"},
     )
     assert response.status_code == 400

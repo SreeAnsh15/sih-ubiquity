@@ -485,13 +485,21 @@ async def voice_onboard_worker(
         raise HTTPException(status_code=400, detail="Unsupported language")
     if not audio_upload:
         return demo_voice_response(requested_language)
-    if not audio_upload.content_type or not audio_upload.content_type.startswith("audio/"):
+    raw_mime_type = (audio_upload.content_type or "").strip().lower()
+    generic_mime_types = {"", "application/octet-stream", "binary/octet-stream", "application/x-unknown"}
+    if raw_mime_type in generic_mime_types:
+        mime_type = "audio/webm"
+    elif raw_mime_type.startswith("audio/"):
+        mime_type = raw_mime_type
+    else:
         raise HTTPException(status_code=415, detail="Upload an audio recording")
-    audio_bytes = await audio_upload.read(MAX_AUDIO_BYTES + 1)
+    audio_bytes = await audio_upload.read()
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
-    if not audio_bytes:
-        raise HTTPException(status_code=400, detail="Audio recording is empty")
+    if len(audio_bytes) < 100:
+        return demo_voice_response(requested_language)
+    if not (os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY):
+        return demo_voice_response(requested_language)
     try:
         active_gemini_client = get_gemini_client()
         if not active_gemini_client:
@@ -499,33 +507,43 @@ async def voice_onboard_worker(
         response = active_gemini_client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=audio_upload.content_type or "audio/webm"),
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
                 (
                     "You are a multilingual PACS worker onboarding assistant for Tamil, Telugu, Hindi, and English. "
-                    "Transcribe the audio accurately and extract structured JSON with: "
-                    "full_name: the worker's name transliterated to English script; "
-                    "primary_skill: map to one standard English category from [Electrical, Plumbing, Carpentry, Masonry, Painting, Appliance Repair, Welding, Cleaning]. "
-                    "Tamil mappings include மரவேலை / தச்சு வேலை -> Carpentry, குழாய் வேலை / பிளம்பிங் -> Plumbing, மின்சார வேலை -> Electrical, கொத்தனார் -> Masonry. "
-                    "Telugu mappings include వడ్రంగి -> Carpentry, ప్లంబింగ్ -> Plumbing, ఎలక్ట్రీషియన్ -> Electrical. "
-                    "Include sub_skills as a list of specific skills mentioned, experience_years as an integer defaulting to 3 when unspecified, "
-                    "base_rate_inr as a float defaulting to 350.0 when unspecified, operating_zone as the locality name, "
-                    "and transcript as exact verbatim text in the original language. "
-                    f"The requested language is {requested_language}. Return only JSON matching the worker profile schema."
+                    "Listen to this spoken audio from an informal worker in India. Supported languages are Tamil, Telugu, Hindi, English, or mixed. "
+                    "Transcribe the audio accurately and return ONLY raw valid JSON with this exact structure: "
+                    '{"name":"Transliterated name in English","trade":"Standard English category","experience_years":3,"base_rate":250,"language_detected":"Tamil/Telugu/Hindi/English","transcript":"Exact verbatim transcript in the original script/English","sub_skills":[],"operating_zone":"locality"}. '
+                    "Map trade to one of Plumbing, Electrical, Carpentry, Masonry, Painting, Appliance Repair, or Cleaning. "
+                    "Tamil examples: மரவேலை / தச்சு வேலை -> Carpentry, குழாய் வேலை / பிளம்பிங் -> Plumbing, மின்சார வேலை -> Electrical, கொத்தனார் -> Masonry. "
+                    "Telugu examples: వడ్రంగి -> Carpentry, ప్లம்பింగ్ -> Plumbing, ఎలక్ట్రీషియన్ -> Electrical. "
+                    "Use experience_years 3 if unspecified and base_rate 250 INR if unspecified. "
+                    f"The requested language is {requested_language}. Do not include markdown fences or commentary."
                 ),
             ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=VoiceExtractionSchema,
                 temperature=0.1,
             ),
         )
-        parsed = response.parsed
+        parsed = getattr(response, "parsed", None)
         if isinstance(parsed, BaseModel):
             extracted = parsed.model_dump()
         elif isinstance(parsed, dict):
             extracted = dict(parsed)
         else:
-            raise HTTPException(status_code=502, detail="Profile extraction returned an invalid response")
+            raw_text = str(getattr(response, "text", "") or "").strip()
+            if raw_text.startswith("```"):
+                raw_text = raw_text.removeprefix("```").removeprefix("json").removeprefix("JSON").removesuffix("```").strip()
+            try:
+                extracted = json.loads(raw_text)
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise HTTPException(status_code=502, detail="Profile extraction returned invalid JSON") from exc
+            if not isinstance(extracted, dict):
+                raise HTTPException(status_code=502, detail="Profile extraction returned invalid JSON")
+        extracted["full_name"] = extracted.get("full_name") or extracted.get("name")
+        extracted["primary_skill"] = extracted.get("primary_skill") or extracted.get("trade")
+        extracted["base_rate_inr"] = extracted.get("base_rate_inr") or extracted.get("base_rate") or 250.0
+        extracted["operating_zone"] = extracted.get("operating_zone") or extracted.get("locality")
         transcription_text = str(extracted.pop("transcript", "")).strip() or str(getattr(response, "text", "") or "").strip()
         profile = {key: value for key, value in extracted.items() if key in WorkerProfileSchema.model_fields}
         required_profile_values = (profile.get("full_name"), profile.get("primary_skill"), profile.get("operating_zone"))
@@ -536,8 +554,8 @@ async def voice_onboard_worker(
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"voice onboarding provider failed: {exc}")
-        return demo_voice_response(requested_language)
+        print(f"[VOICE ONBOARD ERROR] {type(exc).__name__}: {str(exc)}")
+        raise HTTPException(status_code=502, detail="Gemini voice extraction failed. Please try recording again.") from exc
 
 
 
