@@ -507,7 +507,7 @@ def test_demo_master_otps_complete_booking(tmp_path, monkeypatch):
     payload = {"customer_id": "demo-master-otp", "service_type": "Plumbing", "customer_lat": 11.0168, "customer_lng": 76.9558}
     match = client.post("/api/bookings/match-and-price", headers=headers, json=payload).json()
     worker = match["selected_best_match"]
-    for master_otp in ("1234", "0000"):
+    for master_otp in ("1234", "0000", "8888", "1232"):
         created = client.post("/api/bookings", headers=headers, json={**payload, "worker_id": worker["worker_id"], "agreed_amount": worker["fair_price_inr"]}).json()
         completed = client.post("/api/bookings/verify-settle", headers=headers, json={"booking_id": created["booking_id"], "worker_id": worker["worker_id"], "cluster_id": "coimbatore-gandhipuram", "gross_amount": created["gross_amount"], "otp_code": master_otp})
         assert completed.status_code == 200
