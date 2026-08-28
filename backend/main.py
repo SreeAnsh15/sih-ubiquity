@@ -10,6 +10,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Union
 
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -240,7 +244,26 @@ app.add_middleware(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if openai and OPENAI_API_KEY else None
-gemini_client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
+
+def initialize_gemini_client():
+    configured_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if not genai or not configured_key:
+        return None
+    try:
+        return genai.Client(api_key=configured_key)
+    except Exception as exc:
+        print(f"Gemini client initialization failed; fallback mode remains available: {exc}")
+        return None
+
+
+gemini_client = initialize_gemini_client()
+
+
+def get_gemini_client():
+    global gemini_client
+    if gemini_client is None:
+        gemini_client = initialize_gemini_client()
+    return gemini_client
 
 
 class WorkerProfileSchema(BaseModel):
@@ -416,11 +439,12 @@ def read_root() -> dict[str, str]:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    gemini_active = bool(os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY)
     return {
         "status": "ok",
         "database": DB_PATH.exists(),
-        "voice_transcription_configured": bool(OPENAI_API_KEY or GEMINI_API_KEY),
-        "profile_extraction_configured": bool(GEMINI_API_KEY),
+        "voice_transcription_configured": bool(os.getenv("OPENAI_API_KEY") or gemini_active),
+        "profile_extraction_configured": gemini_active,
         "demo_mode": DEMO_MODE,
     }
 
@@ -446,7 +470,8 @@ async def voice_onboard_worker(
         raise HTTPException(status_code=413, detail="Audio recording must be 10 MB or smaller")
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Audio recording is empty")
-    if DEMO_MODE or not gemini_client:
+    active_gemini_client = get_gemini_client()
+    if DEMO_MODE or not active_gemini_client:
         profile = DEMO_VOICE_PROFILES.get(requested_language, DEMO_VOICE_PROFILES["ta"])
         return {
             "status": "success",
@@ -464,7 +489,7 @@ async def voice_onboard_worker(
         }
 
     try:
-        response = gemini_client.models.generate_content(
+        response = active_gemini_client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=audio_upload.content_type or "audio/webm"),
