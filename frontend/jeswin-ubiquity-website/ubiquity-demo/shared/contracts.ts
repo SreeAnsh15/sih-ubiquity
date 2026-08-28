@@ -48,7 +48,7 @@ export interface AdminWorker {
   days_idle: number;
   fairness_boost_factor: number;
   base_rate_inr: number;
-  status: "Active" | "Pending" | "Offline";
+  status: "Active" | "Pending" | "Offline" | "verified";
   verified: boolean;
   availability: string;
 }
