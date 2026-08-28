@@ -609,6 +609,28 @@ def approve_worker(member_id: str, request: Request) -> dict[str, Any]:
     return {"status": "approved", "member_id": member_id, "worker_id": worker_id, "verification_badge": "PACS_VERIFIED"}
 
 
+@app.get("/api/admin/mutual-aid-claims")
+def mutual_aid_claims(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        rows = db.execute("SELECT id, worker_id, amount, reason, status, created_at FROM welfare_claims ORDER BY created_at DESC").fetchall()
+    claims = [{"claim_id": row["id"], "worker_id": row["worker_id"], "amount_inr": row["amount"], "reason": row["reason"], "status": row["status"], "created_at": row["created_at"]} for row in rows]
+    return {"status": "success", "claims": claims, "count": len(claims)}
+
+
+@app.post("/api/admin/mutual-aid-claims/{claim_id}/approve")
+def approve_mutual_aid_claim(claim_id: str, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    with db_connect() as db:
+        claim = db.execute("SELECT * FROM welfare_claims WHERE id = ?", (claim_id,)).fetchone()
+        if not claim:
+            raise HTTPException(status_code=404, detail="Mutual-aid claim not found")
+        if claim["status"] != "pending":
+            raise HTTPException(status_code=409, detail="Mutual-aid claim is no longer pending")
+        db.execute("UPDATE welfare_claims SET status = 'approved' WHERE id = ?", (claim_id,))
+    return {"status": "approved", "claim_id": claim_id}
+
+
 @app.get("/api/admin/demand-forecast")
 def demand_forecast(request: Request) -> dict[str, Any]:
     require_admin(request)
@@ -630,6 +652,7 @@ def list_workers(
     emergency: bool = False,
 ) -> dict[str, Any]:
     require_actor(request, request.headers.get("X-User-Id", "").strip() or "demo-customer")
+    roster_all = service_type.strip().lower() in {"", "all"}
     requested_service = SUPPORTED_SERVICES.get(service_type.strip().lower(), service_type.strip())
     if requested_service not in BASE_RATES:
         requested_service = "Plumbing"
@@ -638,7 +661,10 @@ def list_workers(
         workers = db.execute("SELECT * FROM workers WHERE is_verified = 1 AND availability = 'online'").fetchall()
         for worker in workers:
             skills = {str(skill).lower() for skill in json.loads(worker["skills_json"])}
-            if requested_service.lower() not in skills and not any(SUPPORTED_SERVICES.get(skill) == requested_service for skill in skills):
+            worker_service = requested_service
+            if roster_all:
+                worker_service = next((SUPPORTED_SERVICES.get(skill) for skill in skills if SUPPORTED_SERVICES.get(skill) in BASE_RATES), "Plumbing")
+            elif requested_service.lower() not in skills and not any(SUPPORTED_SERVICES.get(skill) == requested_service for skill in skills):
                 continue
             if active_booking_count(db, worker["worker_id"]) >= worker["capacity"]:
                 continue
@@ -646,7 +672,7 @@ def list_workers(
             if distance > (2 if emergency else 5):
                 continue
             score = 0.45 * max(0.0, 1.0 - distance / 5.0) + 0.35 * worker["trust_rating"] + 0.20 * min(1.0, worker["idle_days"] / 10.0)
-            candidates.append(worker_payload(worker, distance, requested_service, score))
+            candidates.append(worker_payload(worker, distance, worker_service, score))
     candidates.sort(key=lambda item: (-item["fair_match_score"], item["distance_km"], item["worker_id"]))
     return {
         "status": "success",

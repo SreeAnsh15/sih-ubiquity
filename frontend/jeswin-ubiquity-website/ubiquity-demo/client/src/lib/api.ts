@@ -14,6 +14,7 @@ import type {
   VerificationQueueResponse,
   VoiceOnboardResponse,
   WelfareResponse,
+  WelfareClaim,
 } from "@shared/contracts";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -83,7 +84,7 @@ function jsonRequest<T>(path: string, body: unknown, method = "POST") {
 
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
-  getWorkers: (params: { service_type?: BookingRequest["service_type"]; customer_lat?: number; customer_lng?: number; emergency?: boolean } = {}) => {
+  getWorkers: (params: { service_type?: string; customer_lat?: number; customer_lng?: number; emergency?: boolean } = {}) => {
     const query = new URLSearchParams({ service_type: params.service_type || "Plumbing", customer_lat: String(params.customer_lat ?? 11.0168), customer_lng: String(params.customer_lng ?? 76.9558), emergency: String(params.emergency ?? false) });
     return request<MatchResponse>(`/api/workers?${query.toString()}`);
   },
@@ -104,6 +105,8 @@ export const api = {
   verificationQueue: () => request<VerificationQueueResponse>("/api/admin/verification-queue"),
   approveWorker: (memberId: string) => jsonRequest<{ status: string; member_id: string; worker_id: string; verification_badge: string }>(`/api/admin/verification-queue/${encodeURIComponent(memberId)}/approve`, {}),
   demandForecast: () => request<DemandForecastResponse>("/api/admin/demand-forecast"),
+  mutualAidClaims: () => request<{ status: string; claims: WelfareClaim[]; count: number }>("/api/admin/mutual-aid-claims"),
+  approveMutualAidClaim: (claimId: string) => jsonRequest<{ status: string; claim_id: string }>(`/api/admin/mutual-aid-claims/${encodeURIComponent(claimId)}/approve`, {}),
   workerWelfare: (workerId?: string) => request<WelfareResponse>(`/api/workers/welfare${workerId ? `?worker_id=${encodeURIComponent(workerId)}` : ""}`),
   submitClaim: (body: MutualAidClaimRequest) => jsonRequest<{ status: string; claim_id: string; submitted_at: string }>("/api/workers/welfare/claims", body),
 };
