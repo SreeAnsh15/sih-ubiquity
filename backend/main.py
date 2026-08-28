@@ -278,6 +278,8 @@ class WorkerProfileSchema(BaseModel):
 
 class VoiceExtractionSchema(WorkerProfileSchema):
     transcript: str = Field(min_length=2, max_length=5000)
+    experience_years: int = Field(default=3, ge=0, le=60)
+    base_rate_inr: float = Field(default=350.0, gt=0, le=100000)
 
 
 class BookingRequest(BaseModel):
@@ -497,9 +499,16 @@ async def voice_onboard_worker(
             contents=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=audio_upload.content_type or "audio/webm"),
                 (
-                    "Transcribe this worker voice recording and extract the profile in one pass. "
-                    f"The requested language is {requested_language}. Return only JSON matching the worker profile schema. "
-                    "Use the spoken language for the transcript, and infer only fields clearly stated in the recording."
+                    "You are a multilingual PACS worker onboarding assistant for Tamil, Telugu, Hindi, and English. "
+                    "Transcribe the audio accurately and extract structured JSON with: "
+                    "full_name: the worker's name transliterated to English script; "
+                    "primary_skill: map to one standard English category from [Electrical, Plumbing, Carpentry, Masonry, Painting, Appliance Repair, Welding, Cleaning]. "
+                    "Tamil mappings include மரவேலை / தச்சு வேலை -> Carpentry, குழாய் வேலை / பிளம்பிங் -> Plumbing, மின்சார வேலை -> Electrical, கொத்தனார் -> Masonry. "
+                    "Telugu mappings include వడ్రంగి -> Carpentry, ప్లంబింగ్ -> Plumbing, ఎలక్ట్రీషియన్ -> Electrical. "
+                    "Include sub_skills as a list of specific skills mentioned, experience_years as an integer defaulting to 3 when unspecified, "
+                    "base_rate_inr as a float defaulting to 350.0 when unspecified, operating_zone as the locality name, "
+                    "and transcript as exact verbatim text in the original language. "
+                    f"The requested language is {requested_language}. Return only JSON matching the worker profile schema."
                 ),
             ],
             config=types.GenerateContentConfig(
@@ -515,9 +524,15 @@ async def voice_onboard_worker(
             extracted = dict(parsed)
         else:
             raise HTTPException(status_code=502, detail="Profile extraction returned an invalid response")
-        transcription_text = str(extracted.pop("transcript", "")).strip() or getattr(response, "text", "") or f"Voice profile extracted in {requested_language}."
+        transcription_text = str(extracted.pop("transcript", "")).strip() or str(getattr(response, "text", "") or "").strip()
         profile = {key: value for key, value in extracted.items() if key in WorkerProfileSchema.model_fields}
+        required_profile_values = (profile.get("full_name"), profile.get("primary_skill"), profile.get("operating_zone"))
+        unintelligible_markers = ("no intelligible", "could not recognize", "cannot understand", "no speech detected", "inaudible")
+        if not transcription_text or any(not str(value).strip() for value in required_profile_values) or any(marker in transcription_text.lower() for marker in unintelligible_markers):
+            raise HTTPException(status_code=400, detail="Could not recognize speech clearly. Please speak closer to the mic.")
         return {"status": "success", "transcript": transcription_text, "transcription": transcription_text, "name": profile["full_name"], "trade": profile["primary_skill"], "experience_years": profile["experience_years"], "base_rate": profile["base_rate_inr"], "phone": "", "locality": profile["operating_zone"], "language": requested_language, "demo_fallback": False, **profile, "structured_profile": profile}
+    except HTTPException:
+        raise
     except Exception as exc:
         print(f"voice onboarding provider failed: {exc}")
         return demo_voice_response(requested_language)

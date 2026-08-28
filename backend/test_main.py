@@ -433,6 +433,40 @@ def test_gemini_voice_path_does_not_require_openai(tmp_path, monkeypatch):
     assert backend.openai_client is None
 
 
+def test_gemini_voice_path_reports_unintelligible_speech(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+
+    class FakeResponse:
+        text = ""
+        parsed = {
+            "transcript": "",
+            "full_name": "",
+            "primary_skill": "",
+            "sub_skills": [],
+            "experience_years": 3,
+            "base_rate_inr": 350.0,
+            "operating_zone": "",
+        }
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            return FakeResponse()
+
+    class FakeGemini:
+        models = FakeModels()
+
+    backend.DEMO_MODE = True
+    backend.GEMINI_API_KEY = "gemini-test-key"
+    backend.gemini_client = FakeGemini()
+    response = TestClient(backend.app).post(
+        "/api/workers/voice-onboard",
+        files={"audio": ("silence.webm", b"audio-bytes", "audio/webm")},
+        data={"language": "en"},
+    )
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Could not recognize speech clearly. Please speak closer to the mic."}
+
+
 def test_custom_worker_registration_coerces_edge_case_values(tmp_path, monkeypatch):
     backend = load_app(tmp_path, monkeypatch)
     client = TestClient(backend.app)
