@@ -180,49 +180,10 @@ The platform also satisfies a meaningful accessibility and presentation requirem
 | Workforce credential verification | PACS approval is a governance status, not identity/document verification. | Skills, certificates, criminal/background checks, and expiry dates are not modeled. |
 | Observability and SRE controls | A public service needs uptime, auditability, and incident response. | No metrics, tracing, alerting, backup/restore procedure, or operational dashboard is implemented. |
 
-## 3. Recommended High-Impact Additions: Prioritized Roadmap
+## ~~3. Recommended High-Impact Additions: Prioritized Roadmap~~
+### Not needed as of now
+----
 
-The following roadmap is intentionally prioritized for evaluation score, feasibility, and narrative strength rather than for exhaustive production completeness.
-
-### Priority 1 — Offline SMS/USSD cooperative access
-
-**Feature and user story.** A worker with a feature phone can dial a USSD code or send an SMS such as `JOB PLUMBING GANDHIPURAM` and receive a localized nearest-job offer, accept or decline it, and receive a completion OTP. A citizen can request a basic service without a smartphone. Tamil, Hindi, and English templates should be supported first.
-
-**Technical architecture.** Add an adapter layer for an SMS provider and a USSD/IVR provider, with routes such as `POST /api/channels/sms/inbound`, `POST /api/channels/ussd/session`, `POST /api/channels/sms/outbound`, and `GET /api/channels/messages/{phone}`. Store channel sessions, normalized phone identities, pending commands, delivery status, and opt-in consent. Reuse the existing matching service as a channel-agnostic application service rather than duplicating ranking logic.
-
-**Expected evaluation impact.** Very high. This directly addresses inclusion, rural usability, digital divide constraints, and real-world feasibility. It also turns the platform from a polished browser demo into a public-infrastructure design that works across device classes.
-
-### Priority 2 — Dispute resolution and cooperative arbitration
-
-**Feature and user story.** A citizen or worker can open a dispute after a gig, attach structured evidence, pause final release when policy allows, and route the case to a PACS mediator. The mediator records a decision, partial refund, worker remediation, or no-fault outcome with a reason and audit trail.
-
-**Technical architecture.** Add `disputes`, `dispute_events`, `dispute_evidence`, and `arbitrators` tables. Expose `POST /api/bookings/{booking_id}/disputes`, `GET /api/disputes/{id}`, `POST /api/admin/disputes/{id}/assign`, and `POST /api/admin/disputes/{id}/resolve`. Add a state machine such as `opened → evidence_requested → mediation → resolved → appealed`. Link each decision to the booking, settlement, actor, timestamp, and policy version.
-
-**Expected evaluation impact.** High. It demonstrates institutional trust, worker protection, accountable governance, and a credible alternative to opaque aggregator support systems. It also makes the platform’s cooperative identity materially stronger.
-
-### Priority 3 — Forecast-driven seasonal surge pooling
-
-**Feature and user story.** Before monsoon peaks, PACS administrators see a ward/service forecast, reserve a surge pool, pre-position workers, and broadcast prioritized jobs. The system explains why plumbing capacity is being allocated to a specific ward and reports whether the forecast was correct.
-
-**Technical architecture.** Extend the existing forecast endpoint with `forecast_runs`, `surge_pools`, `allocation_campaigns`, and `worker_shift_offers`. Add `POST /api/admin/surge-pools`, `POST /api/admin/allocation-campaigns`, `GET /api/admin/campaigns/{id}`, and `POST /api/workers/shift-offers/{id}/respond`. Feed completed bookings back into a simple evaluation table with predicted versus actual demand. Keep the first version explainable and rule-based, then introduce a trained model only when adequate historical data exists.
-
-**Expected evaluation impact.** High. It connects the AI card to a real operational outcome and shows that cooperative funds are used to prepare for predictable public-service demand rather than merely visualized.
-
-### Priority 4 — Mutual-aid claim adjudication and micro-insurance bridge
-
-**Feature and user story.** A worker submits a medical, tool-loss, or income-interruption claim, provides evidence, and sees the status, reserve contribution, decision reason, and payout status. For risks beyond the cooperative reserve, an optional insurance partner policy can be attached without confusing mutual aid with regulated insurance.
-
-**Technical architecture.** Add claim evidence storage, policy rules, adjudication events, payout instructions, and an external-insurer adapter. New endpoints could include `POST /api/workers/welfare/claims/{id}/evidence`, `POST /api/admin/welfare/claims/{id}/decision`, `POST /api/admin/welfare/claims/{id}/payout`, and `GET /api/workers/welfare/claims/{id}`. Keep reserve ledger entries immutable and introduce a separate payout ledger with idempotency keys.
-
-**Expected evaluation impact.** High. It upgrades the current attractive passbook from a balance display into a credible worker-protection system and gives judges a concrete social-impact outcome.
-
-### Priority 5 — Multi-PACS federation and trust credentials
-
-**Feature and user story.** A worker approved by one PACS can receive jobs in a neighboring ward under federation rules, while each PACS sees only the members, funds, and disputes within its administrative scope. A portable worker credential records verified trade, training, language, and expiry information.
-
-**Technical architecture.** Add `federations`, `pacs_societies`, `pacs_memberships`, `admin_scopes`, `worker_credentials`, and `credential_verifications`. Add endpoints such as `GET /api/federations/{id}/pacs`, `POST /api/pacs/{id}/memberships`, `POST /api/credentials/verify`, and `GET /api/workers/{id}/portable-profile`. Add scoped authorization so a PACS admin cannot approve or alter another society’s records without federation permission.
-
-**Expected evaluation impact.** High for architectural maturity. It addresses the difference between a single-ward app and a cooperative network of societies, which is central to long-term scalability and public-sector adoption.
 
 ## 4. Production Readiness and Presentation Demo Checklist
 
