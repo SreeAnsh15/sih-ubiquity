@@ -324,53 +324,32 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .demo-helper .text-button { padding:0; }
 @media (max-width:700px) { .worker-menu { right:auto; left:0; } .toolbar-actions { justify-content:flex-start; } .toolbar-actions button { width:100%; justify-content:center; } .demo-helper { align-items:flex-start; flex-direction:column; } }
 
-/* Voice-first onboarding recorder */
-.voice-language-hint { text-align: center; margin: 0 0 14px; }
-.voice-recorder-card { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 16px 18px; background: linear-gradient(180deg, #fff 0%, #fff7ed 100%); border: 1px solid #fed7aa; border-radius: 18px; }
-.voice-record-button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 220px; min-height: 166px; padding: 18px; color: #9a3412; background: transparent; border: 0; cursor: pointer; }
-.voice-record-button::before, .voice-record-button::after { content: ""; position: absolute; width: 126px; height: 126px; border: 1px solid #fdba74; border-radius: 999px; animation: voice-record-pulse 2.2s ease-out infinite; }
-.voice-record-button::after { animation-delay: 1.1s; }
-.voice-record-button:disabled { opacity: .55; cursor: not-allowed; }
-.voice-mic-orb { position: relative; z-index: 1; display: grid; place-items: center; width: 92px; height: 92px; color: #fff; background: #ea580c; border: 7px solid #ffedd5; border-radius: 999px; box-shadow: 0 9px 22px #c2410c38; }
-.voice-record-button b { position: relative; z-index: 1; font-size: 12px; line-height: 1.35; text-align: center; }
-.voice-recording-active { display: flex; width: min(100%, 480px); flex-direction: column; align-items: center; gap: 14px; }
-.voice-recording-active .recording-visual { width: 100%; justify-content: center; flex-wrap: wrap; margin-top: 0; }
-.stop-record-button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; color: #fff; background: #dc2626; border: 0; border-radius: 9px; box-shadow: 0 5px 12px #b91c1c2b; font-size: 12px; font-weight: 700; cursor: pointer; }
-.stop-record-button:hover { background: #b91c1c; }
-.sample-voice-button { border-top: 1px solid #fed7aa; padding-top: 12px; }
-@keyframes voice-record-pulse { 0% { transform: scale(.78); opacity: .7; } 70%, 100% { transform: scale(1.35); opacity: 0; } }
-@media (max-width: 620px) { .voice-record-button { min-width: 190px; min-height: 150px; } .voice-mic-orb { width: 82px; height: 82px; } }
+/* Bharat cooperative DPI brand and PACS registry controls */
+.tricolor-emblem svg { display:block; }
+.tricolor-emblem { color:#0f172a; }
+.admin-grid-balanced { align-items:start; }
+.admin-worker-panel { grid-column:1 / -1; }
+.roster-tabs { display:flex; flex-wrap:wrap; gap:7px; margin:4px 0 16px; }
+.roster-tab { padding:7px 10px; color:var(--muted); background:#f8fafc; border:1px solid var(--line); border-radius:999px; font-size:10px; font-weight:800; cursor:pointer; transition:.18s ease; }
+.roster-tab span { margin-left:4px; color:#94a3b8; }
+.roster-tab:hover,.roster-tab.active { color:#9a3412; background:#fff7ed; border-color:#fdba74; }
+.admin-worker-list { display:grid; gap:9px; }
+.admin-worker-row { display:flex; align-items:center; gap:10px; padding:11px; background:#fff; border:1px solid var(--line); border-radius:11px; }
+.admin-worker-info { flex:1; min-width:0; }
+.admin-worker-info b,.admin-worker-info span,.admin-worker-info small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-worker-info b { font-size:12px; }
+.admin-worker-info span { margin-top:2px; color:var(--muted); font-size:10px; }
+.admin-worker-info small { margin-top:3px; color:#94a3b8; font-size:9px; }
+.status-pill { padding:4px 7px; border-radius:999px; font-size:9px; font-weight:800; text-transform:uppercase; }
+.status-pill.active { color:#047857; background:#ecfdf5; }
+.status-pill.pending { color:#b45309; background:#fff7ed; }
+.status-pill.offline { color:#64748b; background:#f1f5f9; }
+.remove-worker-button { display:grid; place-items:center; width:30px; height:30px; color:#b91c1c; background:#fff1f2; border:1px solid #fecdd3; border-radius:7px; cursor:pointer; }
+.remove-worker-button:hover { color:#fff; background:#dc2626; }
+.confirmation-actions { display:flex; justify-content:flex-end; gap:9px; }
+.danger-button { display:inline-flex; align-items:center; gap:7px; min-height:32px; padding:0 12px; color:#fff; background:#dc2626; border:0; border-radius:7px; font-size:10px; font-weight:800; cursor:pointer; }
+.danger-button:hover { background:#b91c1c; }
+@media (max-width:760px) { .admin-worker-row { align-items:flex-start; flex-wrap:wrap; } .admin-worker-info { min-width:calc(100% - 52px); } .admin-worker-row .status-pill { margin-left:48px; } }
+@media (max-width:700px) { .landing-main > h1 { font-size:clamp(2rem,10vw,3rem); } .landing-language { max-width:45vw; } }
 
-/* Landing brand and cooperative persona polish */
-.landing-header { align-items: center; }
-.landing-header .brand { margin-bottom: 0; }
-.landing-header .brand small { color: var(--saffron-dark); }
-.landing-language { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; color: var(--muted); background: rgba(255,255,255,.82); border: 1px solid var(--line); border-radius: 999px; font-size: 11px; font-weight: 800; box-shadow: 0 8px 24px rgba(15,35,65,.05); }
-.landing-language select { border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; cursor: pointer; }
-.landing-main > h1 { max-width: 760px; margin: 0 auto; font-size: clamp(2.25rem, 6vw, 4.45rem); line-height: 1.02; letter-spacing: -.065em; }
-.landing-main > .landing-subtitle { max-width: 700px; }
-.persona-card { transition: all .3s ease; }
-.persona-card.citizen:hover { border-color: rgba(249,115,22,.3); box-shadow: 0 20px 50px rgba(249,115,22,.2); transform: translateY(-4px); }
-.persona-card.worker:hover { border-color: rgba(16,185,129,.3); box-shadow: 0 20px 50px rgba(16,185,129,.22); transform: translateY(-4px); }
-.admin-worker-panel { grid-column: 1 / -1; }
-.roster-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 16px; }
-.roster-tab { padding: 7px 10px; color: var(--muted); background: #f8fafc; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; font-weight: 800; cursor: pointer; transition: .18s ease; }
-.roster-tab span { margin-left: 4px; color: #94a3b8; }
-.roster-tab:hover, .roster-tab.active { color: #9a3412; background: #fff7ed; border-color: #fdba74; }
-.admin-worker-list { display: grid; gap: 9px; }
-.admin-worker-row { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
-.admin-worker-info { flex: 1; min-width: 0; }
-.admin-worker-info b, .admin-worker-info span, .admin-worker-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-worker-info b { font-size: 12px; }
-.admin-worker-info span { color: var(--muted); font-size: 10px; margin-top: 2px; }
-.admin-worker-info small { color: #94a3b8; font-size: 9px; margin-top: 3px; }
-.status-pill { padding: 4px 7px; border-radius: 999px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-.status-pill.active { color: #047857; background: #ecfdf5; }
-.status-pill.pending { color: #b45309; background: #fff7ed; }
-.status-pill.offline { color: #64748b; background: #f1f5f9; }
-.remove-worker-button { display: grid; place-items: center; width: 30px; height: 30px; color: #b91c1c; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 7px; cursor: pointer; }
-.remove-worker-button:hover { color: #fff; background: #dc2626; }
-.confirmation-actions { display: flex; justify-content: flex-end; gap: 9px; }
-.danger-button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px; color: #fff; background: #dc2626; border: 0; border-radius: 7px; font-size: 10px; font-weight: 800; cursor: pointer; }
-.danger-button:hover { background: #b91c1c; }
-@media (max-width: 760px) { .admin-worker-row { align-items: flex-start; flex-wrap: wrap; } .admin-worker-info { min-width: calc(100% - 52px); } .admin-worker-row .status-pill { margin-left: 48px; } }
+.status-pill.verified { color:#1e3a8a; background:#eff6ff; }
