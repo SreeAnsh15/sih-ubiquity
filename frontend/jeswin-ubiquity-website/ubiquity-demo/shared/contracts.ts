@@ -64,11 +64,14 @@ export interface BookingResponse {
   otp_expires_at: string;
   message: string;
   development_otp?: string;
+  completion_otp?: string;
   development_note?: string;
 }
 
 export interface SettlementResponse {
-  status: "settled";
+  status: "settled" | "completed";
+  payout_released?: boolean;
+  mutual_aid_accrued?: number;
   booking_id: string;
   settlement_breakdown: {
     gross_amount_paid: number;

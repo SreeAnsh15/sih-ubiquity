@@ -59,7 +59,7 @@ def test_match_booking_and_settlement_flow(tmp_path, monkeypatch):
             "worker_id": worker["worker_id"],
             "cluster_id": result["cluster_id"],
             "gross_amount": confirmation["gross_amount"],
-            "otp_code": "0000" if confirmation["development_otp"] != "0000" else "1111",
+            "otp_code": "9999",
         },
     )
     assert wrong_otp.status_code == 400
@@ -76,7 +76,9 @@ def test_match_booking_and_settlement_flow(tmp_path, monkeypatch):
         },
     )
     assert settled.status_code == 200
-    assert settled.json()["status"] == "settled"
+    assert settled.json()["status"] == "completed"
+    assert settled.json()["payout_released"] is True
+    assert settled.json()["mutual_aid_accrued"] > 0
     assert settled.json()["settlement_breakdown"]["gross_amount_paid"] == confirmation["gross_amount"]
 
     repeated = client.post(
@@ -217,7 +219,7 @@ def test_cancellation_and_otp_lock(tmp_path, monkeypatch):
                 "worker_id": worker["worker_id"],
                 "cluster_id": "coimbatore-gandhipuram",
                 "gross_amount": created["gross_amount"],
-                "otp_code": "0000" if created["development_otp"] != "0000" else "1111",
+                "otp_code": "9999",
             },
         )
         assert wrong.status_code == 400
@@ -229,7 +231,7 @@ def test_cancellation_and_otp_lock(tmp_path, monkeypatch):
             "worker_id": worker["worker_id"],
             "cluster_id": "coimbatore-gandhipuram",
             "gross_amount": created["gross_amount"],
-            "otp_code": "0000" if created["development_otp"] != "0000" else "1111",
+            "otp_code": "9999",
         },
     )
     assert locked.status_code == 429
@@ -496,3 +498,18 @@ def test_custom_worker_registration_coerces_edge_case_values(tmp_path, monkeypat
     assert saved["primary_skill"] == "Solar Panel Diagnostics"
     assert saved["experience_years"] == 1
     assert saved["base_rate_inr"] == 250.0
+
+
+def test_demo_master_otps_complete_booking(tmp_path, monkeypatch):
+    backend = load_app(tmp_path, monkeypatch)
+    client = TestClient(backend.app)
+    headers = {"X-User-Id": "demo-master-otp"}
+    payload = {"customer_id": "demo-master-otp", "service_type": "Plumbing", "customer_lat": 11.0168, "customer_lng": 76.9558}
+    match = client.post("/api/bookings/match-and-price", headers=headers, json=payload).json()
+    worker = match["selected_best_match"]
+    for master_otp in ("1234", "0000"):
+        created = client.post("/api/bookings", headers=headers, json={**payload, "worker_id": worker["worker_id"], "agreed_amount": worker["fair_price_inr"]}).json()
+        completed = client.post("/api/bookings/verify-settle", headers=headers, json={"booking_id": created["booking_id"], "worker_id": worker["worker_id"], "cluster_id": "coimbatore-gandhipuram", "gross_amount": created["gross_amount"], "otp_code": master_otp})
+        assert completed.status_code == 200
+        assert completed.json()["status"] == "completed"
+        assert completed.json()["payout_released"] is True

@@ -52,8 +52,8 @@ test.describe("Ubiquity platform browser audit", () => {
     await page.getByRole("button", { name: /Request Automated Cooperative Dispatch/i }).click();
     await expect(page.getByRole("heading", { name: /Book Anbu Kumar/i })).toBeVisible();
     await page.getByRole("button", { name: /Confirm booking/i }).click();
-    await expect(page.getByText(/Demo Helper: Worker OTP is 2468/i)).toBeVisible();
-    await page.getByRole("button", { name: /Auto-fill Worker OTP/i }).click();
+    await expect(page.getByText(/Worker Completion OTP:.*2468/i)).toBeVisible();
+    await page.getByRole("button", { name: /Auto-fill OTP/i }).click();
     await expect(page.getByLabel("Completion OTP")).toHaveValue("2468");
     await page.getByRole("button", { name: /Verify & Settle/i }).click();
     await expect(page.getByText(/Settlement complete/i)).toBeVisible();
