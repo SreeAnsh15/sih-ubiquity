@@ -27,12 +27,37 @@ export interface WorkerMatch {
   customer_savings_inr: number;
   trust_rating: number;
   idle_days: number;
+  days_idle: number;
+  fairness_boost_factor: number;
   lat: number;
   lng: number;
   verified: boolean;
   availability: string;
   phone: string;
   emergency_eligible: boolean;
+}
+
+export interface AdminWorker {
+  worker_id: string;
+  full_name: string;
+  phone: string;
+  trade: string;
+  skills: string[];
+  trust_rating: number;
+  idle_days: number;
+  days_idle: number;
+  fairness_boost_factor: number;
+  base_rate_inr: number;
+  status: "Active" | "Pending" | "Offline";
+  verified: boolean;
+  availability: string;
+}
+
+export interface AdminWorkersResponse {
+  status: string;
+  workers: AdminWorker[];
+  count: number;
+  trade: string;
 }
 
 export interface MatchResponse {
@@ -64,11 +89,14 @@ export interface BookingResponse {
   otp_expires_at: string;
   message: string;
   development_otp?: string;
+  completion_otp?: string;
   development_note?: string;
 }
 
 export interface SettlementResponse {
-  status: "settled";
+  status: "settled" | "completed";
+  payout_released?: boolean;
+  mutual_aid_accrued?: number;
   booking_id: string;
   settlement_breakdown: {
     gross_amount_paid: number;
@@ -90,11 +118,21 @@ export interface VoiceProfile {
 
 export interface VoiceOnboardResponse {
   status: "success";
+  transcript: string;
   transcription: string;
+  name: string;
+  trade: string;
+  experience_years: number;
+  base_rate: number;
+  phone: string;
+  locality: string;
+  language: string;
+  demo_fallback?: boolean;
   structured_profile: VoiceProfile;
 }
 
 export interface RegisterWorkerRequest extends VoiceProfile {
+  phone: string;
   transcript: string;
   language: string;
 }
@@ -160,12 +198,21 @@ export interface DemandForecastResponse {
 
 export interface WelfareClaim {
   claim_id: string;
-  user_id: string;
-  member_id: string | null;
+  worker_id: string;
   amount_inr: number;
   reason: string;
-  status: "submitted" | "approved" | "rejected";
+  status: "pending" | "submitted" | "approved" | "rejected";
   created_at: string;
+}
+
+export interface WelfareLedgerRow {
+  booking_id: string;
+  date: string;
+  service: string;
+  customer_fee: number;
+  worker_payout_98pct: number;
+  reserve_contribution_0_5pct: number;
+  reference: string;
 }
 
 export interface WelfareResponse {
@@ -173,15 +220,20 @@ export interface WelfareResponse {
   worker_id: string;
   member_id: string | null;
   full_name: string;
+  primary_skill: string;
   verification_badge: "PACS_PENDING" | "PACS_VERIFIED";
+  registration_status?: "pending_verification" | "approved";
+  lifetime_jobs_completed: number;
+  total_take_home_earnings_inr: number;
   accrued_mutual_aid_inr: number;
   emergency_relief_claimed_inr: number;
   available_relief_balance_inr: number;
+  completed_jobs: WelfareLedgerRow[];
   emergency_relief_claims: WelfareClaim[];
 }
 
 export interface MutualAidClaimRequest {
-  amount_inr: number;
+  amount: number;
   reason: string;
 }
 

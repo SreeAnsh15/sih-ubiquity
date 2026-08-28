@@ -1,65 +1,426 @@
-# Ubiquity Cooperative Gig Services Network
+# Ubiquity --- Cooperative Gig Platform
 
-Ubiquity is a Smart India Hackathon (SIH26089) prototype for PACS-backed cooperative gig services. The application connects customers with verified local workers using a transparent matching score, persists bookings and ledger settlements in SQLite, and provides voice-first worker onboarding when the required AI providers are configured.
+> **SIH Prototype \| Decentralized Local Work Dispatch & PACS Worker
+> Onboarding**
 
-## What changed in the hardened version
+Ubiquity is a cooperative gig-work platform designed to connect
+customers with local workers through a **PACS-based cooperative model**.
+It combines AI-powered multilingual voice onboarding,
+proximity-and-trust-based worker matching, transparent pricing,
+OTP-based job settlement, and a cooperative welfare fund.
 
-The original archive mixed UI-only simulations with backend contracts that could not be called successfully. This version removes the embedded Gemini credential, aligns every request and response shape, uses one Coimbatore–Gandhipuram operating cluster, persists workers/bookings/settlements/registrations in SQLite, validates booking ownership and OTP expiry, uploads real microphone recordings, and surfaces backend failures in the UI instead of returning fabricated success data.
+## ✨ Key Features
 
-The matching score is intentionally transparent: **45% proximity, 35% verified trust rating, and 20% idle-days equalizer**. Candidates must be verified, online, within 5 km, and below their active-booking capacity. Equal scores are resolved by distance and worker ID so list ordering cannot silently decide the result.
+### 🎙️ Multilingual AI Voice Onboarding
 
-> **Important:** Settlement currently records the 98% / 1.5% / 0.5% allocation in the local cooperative ledger. It does not move money through UPI or a bank. A production payment gateway, webhook verification, and an audited payout service must be connected before real funds are handled.
+Workers can register using their voice instead of filling out a lengthy
+form.
 
-## Repository layout
+-   Browser microphone recording with live audio visualizer
+-   Supports Tamil, Telugu, Hindi, and English
+-   Google Gemini 2.5 Flash extracts worker name, trade, sub-skills,
+    experience, base rate, locality, and transcript
+-   Deterministic demo profiles provide resilience when audio is
+    unavailable
+-   Extracted profiles enter the verification workflow before becoming
+    verified workers
 
-| Path | Purpose |
-| --- | --- |
-| `backend/main.py` | FastAPI service, SQLite schema, matching, bookings, OTP validation, ledger settlement, and voice processing |
-| `backend/.env.example` | Safe backend configuration template |
-| `frontend/lovable-ui/` | React/TanStack frontend with customer and worker flows |
-| `frontend/lovable-ui/.env.example` | Frontend API URL and local identity template |
+**API:** `POST /api/workers/voice-onboard`
 
-## Local setup
+### 🤝 Cooperative Worker Matching
 
-### Backend
+Customers can request:
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Add OPENAI_API_KEY and GEMINI_API_KEY only if voice onboarding is needed.
-uvicorn main:app --reload --port 8000
+-   Plumbing
+-   Electrical
+-   Carpentry
+-   House Cleaning
+
+Workers are ranked using:
+
+``` text
+Match Score =
+0.45 × Proximity
++ 0.35 × Trust Rating
++ 0.20 × Idle Days
 ```
 
-The backend starts without AI keys so matching, booking, and ledger testing remain available. For local-only demo testing, set `DEMO_MODE=true`; the default is now `false`. In non-demo deployments, configure a strong server-side `AUTH_SECRET` and pass identities through the authenticated session/signature integration rather than trusting a bare client header. Voice onboarding returns a clear `503` until both provider keys are configured. Never place credentials in source files or commit `.env` files. Any credential that appeared in a previous public commit should be revoked and rotated outside this repository.
+The idle-days component helps prevent workers from being repeatedly
+overlooked in favour of already-busy workers.
+
+### 💰 Fair & Transparent Pricing
+
+The customer flow displays:
+
+-   Fair cooperative price
+-   Commercial aggregator reference price
+-   Customer savings
+
+### 🔐 OTP Proof-of-Work Settlement
+
+Completed jobs use OTP verification and a persistent three-way
+settlement:
+
+  Allocation                  Percentage
+  ------------------------- ------------
+  Worker Direct Payout         **98.0%**
+  PACS Maintenance              **1.5%**
+  Mutual-Aid Welfare Fund       **0.5%**
+
+**API:** `POST /api/bookings/verify-settle`
+
+### 📒 Worker Digital Passbook
+
+Workers can view:
+
+-   Earnings overview
+-   Transaction history
+-   Active worker profile
+-   Emergency welfare claims
+
+Emergency claim categories include Medical, Tool Loss, and Income Loss.
+
+### 🏛️ PACS Admin Portal
+
+The admin portal provides:
+
+-   Ward-level gig analytics
+-   PACS maintenance balance
+-   Mutual-aid reserve
+-   Worker verification queue
+-   One-click worker approval/rejection
+-   Welfare claim adjudication
+-   Seasonal demand forecasting
+
+Worker verification flow:
+
+``` text
+Voice Onboarding
+      ↓
+AI Profile Extraction
+      ↓
+Worker Registration
+      ↓
+Pending Verification
+      ↓
+PACS Admin Review
+      ↓
+Approved
+      ↓
+Verified Worker
+```
+
+## 🏗️ Architecture
+
+``` text
+                    ┌──────────────────────┐
+                    │     React + Vite     │
+                    │      Frontend        │
+                    │       :3000          │
+                    └──────────┬───────────┘
+                               │
+                         REST API / HTTP
+                               │
+                    ┌──────────▼───────────┐
+                    │       FastAPI        │
+                    │       Backend        │
+                    │        :8000         │
+                    └───────┬───────┬──────┘
+                            │       │
+                 ┌──────────▼──┐ ┌──▼─────────────┐
+                 │   SQLite    │ │ Gemini 2.5     │
+                 │  Database   │ │     Flash      │
+                 └─────────────┘ └────────────────┘
+```
+
+## 🛠️ Technology Stack
 
 ### Frontend
 
-```bash
-cd frontend/lovable-ui
-pnpm install
-cp .env.example .env.local
-pnpm dev
+-   React 19
+-   TypeScript
+-   Vite
+-   Wouter
+-   Tailwind CSS
+-   Lucide React
+-   Leaflet
+
+### Backend
+
+-   Python 3.10+
+-   FastAPI
+-   Uvicorn
+-   Pydantic
+-   SQLite
+
+### AI
+
+-   Google Gemini 2.5 Flash
+-   Google GenAI Python SDK
+
+## 📁 Project Structure
+
+``` text
+sih-ubiquity/
+│
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── ubiquity.db
+│   ├── .env
+│   └── ...
+│
+├── frontend/
+│   └── jeswin-ubiquity-website/
+│       └── ubiquity-demo/
+│           ├── client/
+│           ├── package.json
+│           ├── vite.config.*
+│           └── ...
+│
+├── README.md
+└── ...
 ```
 
-The frontend reads `VITE_API_BASE_URL` rather than hardcoding an environment-specific deployment URL. The default local identity is `demo-customer`; replace it with a stable identity supplied by your authentication layer before production use. The backend requires the matching `X-User-Id` header as a temporary identity boundary for this prototype.
+## 🚀 Getting Started
 
-## API contract
+### 1. Clone the repository
 
-| Method | Endpoint | Required input |
-| --- | --- | --- |
-| `GET` | `/api/health` | None |
-| `POST` | `/api/bookings/match-and-price` | `customer_id`, `service_type`, `customer_lat`, `customer_lng`; matching user in `X-User-Id` |
-| `POST` | `/api/bookings` | Matching fields plus `worker_id` and `agreed_amount`; returns a persisted booking and development-only OTP when `DEMO_MODE=true` |
-| `POST` | `/api/bookings/verify-settle` | `booking_id`, `worker_id`, `cluster_id`, `gross_amount`, and a matching unexpired 4-digit `otp_code`; five failed attempts lock the booking |
-| `DELETE` | `/api/bookings/{booking_id}/cancel` | Authorized customer cancellation while the booking is confirmed |
-| `POST` | `/api/workers/voice-onboard` | Multipart `audio_file` plus `preferred_language`; requires both AI providers |
-| `POST` | `/api/workers/register` | Extracted profile JSON and `X-User-Id`; persists a unique PACS member registration |
+``` bash
+git clone https://github.com/SreeAnsh15/sih-ubiquity.git
+cd sih-ubiquity
+```
 
-## Testing the booking flow
+### 2. Backend Setup
 
-With the backend running, use the frontend to search for a worker, confirm a booking, and copy the development-only OTP shown in the confirmation card. Enter the OTP to record the ledger settlement. Repeating settlement for the same booking, altering the amount, using a wrong OTP, exceeding the OTP attempt limit, cancelling another customer’s booking, or omitting the identity boundary is rejected. Expired bookings no longer consume worker capacity.
+``` bash
+cd backend
+python -m venv ../venv
+```
 
-For production, keep `DEMO_MODE=false`, provide a worker-facing OTP delivery channel, replace the prototype identity boundary with an authenticated session/token issuer, use a managed database with atomic reservation support, represent money in integer paise or `Decimal`, encrypt sensitive voice/identity data, configure retention and deletion policies, and integrate an actual payment provider with idempotent webhook handling.
+Activate the virtual environment on Windows PowerShell:
+
+``` powershell
+..\venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+``` bash
+pip install -r requirements.txt
+```
+
+Configure `backend/.env`:
+
+``` env
+GEMINI_API_KEY=your_api_key_here
+```
+
+Start the backend:
+
+``` bash
+uvicorn main:app --reload --port 8000
+```
+
+Backend: `http://localhost:8000`
+
+### 3. Frontend Setup
+
+Open another terminal:
+
+``` bash
+cd frontend/jeswin-ubiquity-website/ubiquity-demo
+npm install
+npm run dev
+```
+
+Frontend: `http://localhost:3000`
+
+## 🔌 Important API Endpoints
+
+  -----------------------------------------------------------------------------------------------------
+  Method                  Endpoint                                              Purpose
+  ----------------------- ----------------------------------------------------- -----------------------
+  `GET`                   `/api/health`                                         Backend
+                                                                                health/configuration
+                                                                                check
+
+  `POST`                  `/api/workers/voice-onboard`                          AI voice profile
+                                                                                extraction
+
+  `POST`                  `/api/workers/register`                               Register extracted
+                                                                                worker
+
+  `GET`                   `/api/admin/verification-queue`                       View pending
+                                                                                registrations
+
+  `POST`                  `/api/admin/verification-queue/{member_id}/approve`   Approve a worker
+
+  `GET`                   `/api/admin/dashboard`                                Admin dashboard
+                                                                                statistics
+
+  `POST`                  `/api/bookings/match-and-price`                       Match worker and
+                                                                                calculate pricing
+
+  `POST`                  `/api/bookings`                                       Create a booking
+
+  `POST`                  `/api/bookings/verify-settle`                         Verify completion and
+                                                                                settle payment
+  -----------------------------------------------------------------------------------------------------
+
+## 🎯 Typical Demo Flow
+
+### Worker
+
+1.  Open `/worker/onboard`.
+2.  Record a worker introduction.
+3.  Gemini processes the recording.
+4.  Review the extracted profile.
+5.  Submit the registration.
+6.  The worker enters the PACS verification queue.
+
+### Admin
+
+1.  Open `/admin`.
+2.  Open the worker verification queue.
+3.  Review the worker information.
+4.  Approve the worker.
+5.  The worker becomes verified.
+
+### Customer
+
+1.  Open `/customer`.
+2.  Select a required service.
+3.  View eligible workers.
+4.  Review cooperative pricing.
+5.  Request automated cooperative dispatch.
+6.  Confirm the booking.
+7.  Complete the job.
+8.  Verify completion using the OTP.
+9.  The settlement is split between the worker, PACS maintenance, and
+    mutual-aid fund.
+
+### Worker Passbook
+
+1.  Open `/worker`.
+2.  Select the active worker profile.
+3.  View earnings and transactions.
+4.  Submit an emergency welfare claim when applicable.
+
+## 🧠 AI Voice Extraction
+
+Example spoken input:
+
+``` text
+"My name is Vikram Malhotra, professional carpenter
+from Gandhipuram with eight years experience,
+base rate 500 rupees."
+```
+
+Gemini can extract structured information such as:
+
+``` json
+{
+  "full_name": "Vikram Malhotra",
+  "primary_skill": "carpenter",
+  "experience_years": 8,
+  "base_rate_inr": 500,
+  "operating_zone": "Gandhipuram"
+}
+```
+
+## 🏛️ Cooperative Model
+
+Ubiquity is built around three principles:
+
+1.  **Fair Worker Allocation** --- matching considers proximity, trust,
+    and idle time.
+2.  **Transparent Economics** --- customers can see the cooperative
+    price and commercial reference.
+3.  **Shared Worker Welfare** --- a portion of completed-job value
+    supports PACS maintenance and the mutual-aid fund.
+
+## 🗃️ Data Model
+
+Core SQLite entities include:
+
+``` text
+workers
+    └── Verified worker profiles
+
+worker_registrations
+    └── Pending/approved PACS registrations
+
+bookings
+    └── Customer-worker jobs
+
+settlements
+    ├── Worker payout
+    ├── PACS maintenance
+    └── Mutual-aid contribution
+
+welfare_claims
+    └── Worker emergency claims
+```
+
+## 🔒 Environment Variables
+
+Never commit API keys or other secrets to GitHub.
+
+Example:
+
+``` env
+GEMINI_API_KEY=your_api_key_here
+AUTH_SECRET=your_secret_here
+DEMO_MODE=true
+```
+
+Use appropriate production values and disable demo-only behaviour before
+production deployment.
+
+## 🧪 Demo & Development
+
+The prototype contains demo-oriented resilience features so major
+workflows can still be demonstrated when external services or real-world
+inputs are unavailable.
+
+The backend also exposes:
+
+``` text
+GET /api/health
+```
+
+for checking service and AI configuration.
+
+## 📌 Project Status
+
+**Current status: Prototype / SIH Demonstration**
+
+-   [x] Multilingual AI voice onboarding
+-   [x] Worker profile extraction
+-   [x] PACS worker registration
+-   [x] Admin worker verification
+-   [x] Cooperative worker matching
+-   [x] Fair-price calculation
+-   [x] Automated cooperative dispatch
+-   [x] OTP job completion
+-   [x] Atomic settlement split
+-   [x] Worker digital passbook
+-   [x] Emergency welfare claims
+-   [x] PACS admin dashboard
+-   [x] Seasonal demand forecasting
+-   [x] SQLite persistence
+
+## 👥 Team
+
+**SIH Ubiquity Team**
+
+Built as a Smart India Hackathon prototype focused on cooperative
+local-work dispatch, worker empowerment, and transparent gig-work
+economics.
+
+## 📄 License
+
+This repository is currently intended as a project/prototype repository.
+Add the appropriate open-source license if the project is released under
+one.

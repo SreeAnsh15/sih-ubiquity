@@ -4,3 +4,4 @@ pydantic>=2.6.0
 google-genai
 openai
 python-multipart
+python-dotenv
