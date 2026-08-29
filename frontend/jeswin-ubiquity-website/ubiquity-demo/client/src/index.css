@@ -353,3 +353,28 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 @media (max-width:700px) { .landing-main > h1 { font-size:clamp(2rem,10vw,3rem); } .landing-language { max-width:45vw; } }
 
 .status-pill.verified { color:#1e3a8a; background:#eff6ff; }
+
+/* jeswin-two landing, Bharat DPI emblem, and voice recorder polish */
+.brand { background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 3px rgba(15,23,42,.08); display:flex; align-items:center; gap:12px; padding:6px 12px; transition:border-color .2s ease, box-shadow .2s ease; }
+.brand:hover { border-color:#cbd5e1; box-shadow:0 4px 12px rgba(15,23,42,.10); }
+.brand .logo-emblem { width:42px; height:42px; display:grid; place-items:center; color:#1e3a8a; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:4px; }
+.brand .logo-emblem svg { width:100%; height:100%; }
+.brand b { color:#0f172a; font-size:16px; line-height:1; }
+.brand small { color:#64748b; display:block; font-size:9px; font-weight:700; letter-spacing:.08em; line-height:1.2; margin-top:3px; text-transform:uppercase; }
+.landing-title { color:#0f172a; font-size:clamp(2.25rem,5vw,3rem); font-weight:900; line-height:1.1; margin:0 auto; max-width:56rem; }
+.persona-card.worker { transition:transform .3s ease, border-color .3s ease, box-shadow .3s ease; }
+.persona-card.worker:hover { border-color:rgba(16,185,129,.30); box-shadow:0 20px 50px rgba(16,185,129,.28); transform:translateY(-4px); }
+.voice-recorder-card { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px; }
+.voice-record-button { align-items:center; background:#059669; border:0; border-radius:999px; box-shadow:0 10px 22px rgba(5,150,105,.22); color:#fff; display:flex; flex-direction:column; gap:8px; justify-content:center; min-height:80px; min-width:80px; padding:12px; transition:background .3s ease, transform .3s ease, box-shadow .3s ease; }
+.voice-record-button:hover { background:#047857; box-shadow:0 14px 28px rgba(5,150,105,.28); transform:scale(1.05); }
+.voice-record-button:active { transform:scale(.95); }
+.voice-record-button b { color:#334155; font-size:14px; font-weight:700; margin-top:10px; position:absolute; transform:translateY(62px); white-space:nowrap; }
+.voice-record-button .voice-mic-orb { color:#fff; display:grid; place-items:center; }
+.voice-recording-active { align-items:center; display:flex; flex-direction:column; gap:16px; width:100%; }
+.voice-recording-active .recording-visual { align-items:center; display:flex; flex-direction:column; gap:10px; }
+.stop-record-button { background:#ef4444; border:0; border-radius:999px; box-shadow:0 8px 18px rgba(239,68,68,.18); color:#fff; font-size:12px; font-weight:800; min-height:38px; padding:0 16px; }
+.stop-record-button:hover { background:#dc2626; }
+.recording-visual.voice-active .waveform span { background:#059669; }
+.recording-visual.voice-quiet .waveform span { background:#94a3b8; }
+.status-pill.verified { background:#eff6ff; color:#1e3a8a; }
+@media (max-width:700px) { .brand small { font-size:8px; } .landing-title { font-size:clamp(2rem,10vw,2.7rem); } }
